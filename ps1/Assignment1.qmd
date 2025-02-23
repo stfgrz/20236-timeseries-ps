@@ -1,0 +1,517 @@
+---
+title: "Assignment 1"
+author: "Stefano Graziosi, Gabriele Molè, Laura Lo Schiavo, Giovanni Carron"
+format: html
+editor: visual
+---
+
+```{r echo = "FALSE"}
+#| label: Load the relevant libraries
+
+# To solve conflicts
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+
+# Time series packages
+library(dlm)
+library(TSstudio)
+library(feasts)
+library(tseries)
+  # Necessary packages for quantmod
+  library(zoo)
+  library(xts)
+library(quantmod)
+
+# Datasets
+library(fpp3)
+
+# For fancy plots
+library(ggthemes)
+  # Necessary packages for viridis
+  library(viridisLite)
+library(viridis)
+library(gridExtra)
+
+# Packages related to tidyverse, for data manipulation
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+
+# To handle time changes
+library(timechange)
+```
+
+# Description of the problem
+
+## Data
+
+```{r}
+data <- read.csv("gistemp.txt", header = TRUE) 
+monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
+ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
+```
+
+# 1. Task 1
+
+## 1.1 Trend Analysis
+
+> What long-term trends are visible in the temperature data?
+
+### 1.1.1 Using the `decompose` function
+
+We first create two objects that will take the values of the decomposed time series. We try both additive and multiplicative decomposition for the sake of completeness.
+
+```{r}
+decompose_a_data <- decompose(ts_data, type = "additive")
+
+decompose_m_data <- decompose(ts_data, type = "multiplicative")
+```
+
+We now plot both objects.
+
+```{r}
+plot(decompose_a_data)
+```
+
+```{r}
+plot(decompose_m_data)
+```
+
+An alternative is to simply use the command `ts_decompose` from the package `TSstudio`
+
+```{r}
+ts_decompose(ts_data, type = "both")
+```
+
+### 1.1.1 Using the `stl` function
+
+```{r}
+stl_data <- stl(ts_data, s.window = "periodic")
+```
+
+```{r}
+plot(stl_data)
+```
+
+> What long-term trends are visible in the temperature data?
+
+We'll try to plot something nicer
+
+We first create a value which stores all of our dates, this way we can build furhter data objects that we can then use to make plots
+
+```{r}
+dates <- seq.Date(from = as.Date("1880-01-01"), 
+                  by = "month", 
+                  length.out = length(ts_data))
+```
+
+Now we create a dataframe which contains the date and the actual values taken by the time series.
+
+```{r}
+ts_df <- data.frame(date = dates, value = as.numeric(ts_data))
+```
+
+We use the object we just created to plot a nice graph using ggplot
+
+```{r}
+graph_1 <- ggplot(ts_df, aes(x = date, y = value)) + # We specify the dataframe (ts_df) and then the order of the variables we want to plot (aes(x = date, y = value)) 
+  geom_line(color = "steelblue", linewidth = 0.25) +                      
+  geom_smooth(method = "loess", color = "firebrick", fill = "firebrick",          # puoi sostituire "gam" con "loess" per coerenza con stl
+              se = TRUE, show.legend = TRUE, linetype = "dashed", linewidth = 0.25) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  labs(title = "Global Temperature Anomaly Trend",
+       subtitle = "GISTEMP Data (1880 onward)",
+       x = "Date",
+       y = "Temperature Anomaly (°C)") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )                                               
+  
+print(graph_1)
+```
+
+> Are there periods of acceleration or deceleration in warming?
+
+As we can see from the graph above, considering that we are already using the $\Delta$ in temperatures, any year where the $\Delta$ is negative is a year where there is a deceleration in warming; hence, from 1880 to approximately 1938, we observe that the Earth's surface temperature is actually getting cooler.
+
+We then observe a rapid increase in conjunction with the start of the Second World War, a brief decline afterwards and, ultimately, a rapid increase starting from the post-war recovery period. Starting from 1950, we observe a rapid acceleration in the rate of change of temperature.
+
+## 1.2 Seasonality
+
+> Can you interpret the seasonal pattern?
+
+### 1.2.1 Comparison between different decompositions
+
+```{r}
+seasonal_da <- decompose_a_data$seasonal # This is a time series object
+seasonal_dm <- decompose_m_data$seasonal # This is a time series object
+seasonal_stl <- stl_data$time.series[, "seasonal"]
+```
+
+As we did in the previous step, if we want to plot something, we first need to create a new dataframe (`_df`) object in order to plot everything nicely.
+
+```{r}
+seasonal_da_df <- data.frame(date = dates, value = as.numeric(seasonal_da))
+seasonal_dm_df <- data.frame(date = dates, value = as.numeric(seasonal_dm))
+seasonal_stl_df <- data.frame(date = dates, value = as.numeric(seasonal_stl))
+```
+
+```{r}
+graph_2a <- ggplot(seasonal_da_df, aes(x = date, y = value)) +
+  geom_line(color = "steelblue", linewidth = 0.25) +
+  theme_minimal()
+
+graph_2b <- ggplot(seasonal_dm_df, aes(x = date, y = value)) +
+  geom_line(color = "steelblue", linewidth = 0.25) +
+  theme_minimal()
+
+graph_2c <- ggplot(seasonal_stl_df, aes(x = date, y = value)) +
+  geom_line(color = "steelblue", linewidth = 0.25) +
+  theme_minimal()
+
+grid.arrange(graph_2a, graph_2b, graph_2c, nrow = 3)
+```
+
+It appeaers clear that we're getting the same seasonality for each year: maybe it's just better if we plot the data for a given year, say last year.
+
+We first have to create the opportune dataframe:
+
+```{r}
+seasonal_da_ly <- window(seasonal_da, start = time(seasonal_da)[length(seasonal_da) - frequency(seasonal_da) + 1])
+seasonal_dm_ly <- window(seasonal_dm, start = time(seasonal_dm)[length(seasonal_dm) - frequency(seasonal_dm) + 1])
+seasonal_stl_ly <- window(seasonal_stl, start = time(seasonal_stl)[length(seasonal_stl) - frequency(seasonal_stl) + 1])
+```
+
+Now we just merge these 3 values into a dataframe to plot it:
+
+```{r}
+seasonal_comparison_df <- data.frame(
+  time = time(seasonal_da_ly),
+  additive = as.numeric(seasonal_da_ly),
+# multiplicative = as.numeric(seasonal_dm_ly),
+  stl = as.numeric(seasonal_stl_ly)
+)
+
+seasonal_comparison_df_long <- pivot_longer(seasonal_comparison_df, cols = c("additive", "stl"), names_to = "methodology", values_to = "value")
+```
+
+```{r}
+graph_3 <- ggplot(seasonal_comparison_df_long, aes(x = time, y = value, color = methodology)) +
+  geom_line() +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  labs(title = "Seasonality Over One Year", 
+       x = "Time", y = "Δ Temperature") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )
+
+print(graph_3)
+```
+
+> We can safely state that the methodology that we apply does not effect drastic differences on the calculation of the seasonal component.
+
+### 1.2.2 Comparison between different time frames
+
+```{r}
+start_years <- seq(min(data$Year), max(data$Year) - 29, by = 10)
+seasonal_indices <- data.frame()
+
+for (start in start_years) {
+  # Subset the data for the 30-year period
+  subset_data <- subset(data, Year >= start & Year < start + 30)
+  
+  # Reshape to long format for the subset
+  subset_long <- subset_data %>%
+    select(Year, Jan:Dec) %>%
+    pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "Anomaly") %>%
+    mutate(Month = match(Month, month.abb))
+  
+  # Create a ts object for the subset
+  ts_subset <- ts(subset_long$Anomaly, start = c(start, 1), frequency = 12)
+  
+  # Decompose using STL
+  decomp_subset <- stl(ts_subset, s.window = "periodic")
+  
+  # Extract the seasonal component and average by month
+  seasonal_comp <- decomp_subset$time.series[, "seasonal"]
+  temp_df <- data.frame(
+    Date = as.Date(as.yearmon(time(ts_subset))),
+    Month = cycle(ts_subset),
+    Seasonal = seasonal_comp
+  )
+  seasonal_mean <- aggregate(Seasonal ~ Month, data = temp_df, FUN = mean)
+  seasonal_mean$Period <- paste(start, start + 29, sep = "-")
+  
+  seasonal_indices <- rbind(seasonal_indices, seasonal_mean)
+}
+```
+
+```{r}
+graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(size = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "H") +
+  ggtitle("Evolution of Seasonal Component (30-Year Windows)") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )
+
+print(graph_4)
+```
+
+## 1.4 Noise and Uncertainty:
+
+-   Briefly comment on the variation that is unexplained by the decomposition. Are there anomalies in the residuals?
+
+Our idea is to plot the 3 residuals side by side
+
+```{r}
+residuals_da <- decompose_a_data$random # This is a time series value
+residuals_dm <- decompose_m_data$random # This is a time series value
+residuals_stl <- stl_data$time.series[, "remainder"] # This is a time series value
+```
+
+As we did in the previous step, if we want to plot something, we first need to create a new dataframe (`_df`) object in order to plot everything nicely.
+
+```{r}
+residuals_da_df <- data.frame(date = dates, value = as.numeric(residuals_da)) # This is a dataframe with dates in one row and a time series in the other row
+residuals_dm_df <- data.frame(date = dates, value = as.numeric(residuals_dm))
+residuals_stl_df <- data.frame(date = dates, value = as.numeric(residuals_stl))
+```
+
+We inspect this graphically
+
+This is just for debugging an issue with the colouring, ask Stefano
+
+```{r}
+residuals_da_df$y_bin <- cut(residuals_da_df$value, breaks = 100)
+residuals_dm_df$y_bin <- cut(residuals_dm_df$value, breaks = 100)
+residuals_stl_df$y_bin <- cut(residuals_stl_df$value, breaks = 100)
+```
+
+We also create a custom theme to save time
+
+```{r}
+custom_theme <- theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )
+```
+
+```{r}
+graph_2a <- ggplot(residuals_da_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.5, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2a", x = "Date", y = "Value")
+
+graph_2b <- ggplot(residuals_dm_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.5, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2b", x = "Date", y = "Value")
+
+graph_2c <- ggplot(residuals_stl_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.5, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2c", x = "Date", y = "Value")
+
+grid.arrange(graph_2a, graph_2b, graph_2c, nrow = 1)
+```
+
+It appears evident that the mother of whoever was resposible for the observation and reporting of the outliers was a puttana; we will hence need to do minimal data clearning:
+
+```{r}
+filtered_residuals_dm_df <- residuals_dm_df %>%
+  filter(value > quantile(value, 0.12, na.rm = TRUE) & value < quantile(value, 0.92, na.rm = TRUE))
+
+filtered_residuals_dm_df$y_bin <- cut(filtered_residuals_dm_df$value, breaks = 100)
+```
+
+Now just plot everything again:
+
+```{r}
+graph_2a <- ggplot(residuals_da_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.36, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2a", x = "Date", y = "Value")
+
+graph_2b <- ggplot(filtered_residuals_dm_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.36, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2b", x = "Date", y = "Value")
+
+graph_2c <- ggplot(residuals_stl_df, aes(x = date, y = value, color = y_bin)) +
+  geom_jitter(size = 0.36, linewidth = 0.01) +
+  scale_color_viridis_d(option = "H", guide = FALSE) +
+  custom_theme +
+  labs(title = "Graph 2c", x = "Date", y = "Value")
+
+grid.arrange(graph_2a, graph_2b, graph_2c, nrow = 1)
+```
+
+To approach the task in a more rigurous way, we can also implement a series of statistical tests, namely:
+
+### 1.4.1 Ljung-Box Test
+
+```{r}
+Box.test(residuals_da, lag = 12, type = "Ljung-Box")
+Box.test(residuals_dm, lag = 12, type = "Ljung-Box")
+Box.test(residuals_stl, lag = 12, type = "Ljung-Box")
+```
+
+### 1.4.2 Shapiro Test
+
+```{r}
+shapiro.test(residuals_da)
+shapiro.test(residuals_dm)
+shapiro.test(residuals_stl)
+```
+
+### 1.4.3 ACF Test
+
+```{r}
+acf(na.omit(residuals_da), main="ACF of residuals - additive decomposition")
+acf(na.omit(residuals_dm), main="ACF of residuals - multiplicative decomposition")
+acf(na.omit(residuals_stl), main="ACF of residuals - stl decomposition")
+```
+
+------------------------------------------------------------------------
+
+# 2. Task 2
+
+> You will now focus on the trend extracted from data in section 2, specifically on the window ranging from the beginning up to December 1930. Imagine the data arrive sequentially. Fit an exponential smoothing algorithm on this subset of data.
+
+## Setting everything up
+
+Taking the values for the subset 1880-1930 and plotting
+
+```{r}
+data_sub <- data[1:51,]
+data_ts_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
+```
+
+## 2.1 Values of the α parameter
+
+> Comment on the value of the α parameter used in the R function HoltWinters. How is it determined? Try another small set of values, showing how the resulting fitted values change.
+
+```{r}
+? HoltWinters
+```
+
+The alpha is obtained by minimizing the squared prediction error
+
+```{r}
+data_ts_sub <- data_ts_sub[is.finite(data_ts_sub)]
+HWdata <- HoltWinters(data_ts_sub, beta=F, gamma=F)
+plot(HWdata)
+alpha <- HWdata$alpha
+alpha
+```
+
+Errors of prediction within sample 1880-1930
+
+```{r}
+yhat <- fitted(HWdata)[,1]
+#I remove the first observation
+data_ts_sub_2 <- data_ts_sub[-1]
+#MAE
+mean(abs(data_ts_sub_2-yhat))
+#MAPE
+mean(abs(data_ts_sub_2-yhat)/data_ts_sub_2)
+#MSE
+mean(abs(data_ts_sub_2-yhat)^(2))
+```
+
+## 2.2 One-step-ahead predictions
+
+> In particular, plot the one-step-ahead predictions for this time interval and compare them to the observed values.
+
+```{r}
+par(mfrow=c(3,2), cex=.4)
+#alpha 0.1
+HWdata_01 <- HoltWinters(data_ts_sub, alpha=.1, beta=F, gamma=F)
+plot(HWdata_01)
+#alpha 0.3
+HWdata_03 <- HoltWinters(data_ts_sub, alpha=.3, beta=F, gamma=F)
+plot(HWdata_03)
+#alpha 0.1
+plot(HWdata)
+#alpha 0.7
+HWdata_07 <- HoltWinters(data_ts_sub, alpha=.7, beta=F, gamma=F)
+plot(HWdata_07)
+#alpha 0.9
+HWdata_09 <- HoltWinters(data_ts_sub, alpha=.9, beta=F, gamma=F)
+plot(HWdata_09)
+
+par(mfrow=c(1,1))
+```
+
+## 2.3 Analytic expression of forecast function
+
+> Specify the analytic expression of the forecast function of the exponential smoothing algorithm for different time steps.
+
+Explicit function
+
+```{r}
+HWdata$alpha
+HWdata$beta
+HWdata$gamma
+```
+
+The function should be
+
+$$y_t = -0.0212635 + \epsilon_t$$
+
+as the prediction is assumed to be be constant
+
+where the seasonal component is a dummy for all the seasonal variables
+
+## 2.4 Forecastst from 1930
+
+> Now assume that you are a statistician from December 1930 and you want to predict (through exponential smoothing) the temperature difference for the following 95 years (i.e. up to 2024). Plot the forecasts along with the observed data and compute the prediction error at 1 day, 1 year, 5 years, 10 years, 50 years and 90 years. Do you notice a pattern? Support your answer, both if your answer is positive or negative.
+
+```{r}
+#prediction 
+observed_data <- as.vector(ts_data)[613:1692]
+HW1080.pred <- predict(HWdata, 1080, prediction.interval = TRUE, level=0.95)
+#prediction and observed data
+ts.plot(observed_data,ts(HW1080.pred[,1], start = c(1931,1), frequency = 12))
+#raw error
+plot.ts((HW1080.pred[,1]) - (observed_data), main = "Raw error")
+#absolute value error
+plot.ts(abs(HW1080.pred[,1] - (observed_data)), main = "Absolute value error")
+#Absolute Percentage Value
+plot.ts(abs((HW1080.pred[,1] - (observed_data)/observed_data)), main = "Absolute Percentage Value Error")
+#squared error
+plot.ts((HW1080.pred[,1] - (observed_data))^2, main = "Squared Error")
+
+```
+
+-   The 1st plot compares the flat prediction with the observed data
+-   The 2nd plot show the raw forecast error.
+-   The 3rd plot shows the error in absolute value
+-   The 4th plot shows the absolute percentage error
+-   The 5th plot shows the squared error
+
+Interpretation: the forecast error increases as time goes on as the trend fitting the general data seems to show an average increase in the deviation from the baseline value. Hence, it is plausible that assuming the flat prediction stemming from 1880-1930 underestimates temperatures of following periods.

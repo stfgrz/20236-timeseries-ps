@@ -47,3 +47,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# I'm still trying to understand what it is
+.DS_Store
