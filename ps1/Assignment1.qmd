@@ -215,6 +215,10 @@ graph_3 <- ggplot(seasonal_comparison_df_long, aes(x = time, y = value, color = 
 print(graph_3)
 ```
 
+#### NOTES
+  
+  Parlare di temperatura globale.
+
 > We can safely state that the methodology that we apply does not effect drastic differences on the calculation of the seasonal component.
 
 ### 1.2.2 Comparison between different time frames
@@ -272,6 +276,18 @@ graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period,
 
 print(graph_4)
 ```
+#### NOTES
+
+  Non sappiamo come trattare l'overlap, probabilmente non ci sono conseguenze rilevanti
+  
+  Ha molto senso se si considera fino al 1950 (anno di arrivo, considera 1949), in quanto quando aumenta il trend nel 1950 -ca si mischiano gli effetti.
+  
+  Valuta modello con cambio a 1960-1970
+  
+  Come seasonality qualcuno si aspetta estati più caldi dell'inverno 
+  
+  
+
 
 ## 1.4 Noise and Uncertainty:
 
@@ -408,7 +424,7 @@ Taking the values for the subset 1880-1930 and plotting
 
 ```{r}
 data_sub <- data[1:51,]
-data_ts_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
+ts_data_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
 ```
 
 ## 2.1 Values of the α parameter
@@ -422,8 +438,8 @@ data_ts_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
 The alpha is obtained by minimizing the squared prediction error
 
 ```{r}
-data_ts_sub <- data_ts_sub[is.finite(data_ts_sub)]
-HWdata <- HoltWinters(data_ts_sub, beta=F, gamma=F)
+ts_data_sub <- ts_data_sub[is.finite(ts_data_sub)]
+HWdata <- HoltWinters(ts_data_sub, beta=F, gamma=F)
 plot(HWdata)
 alpha <- HWdata$alpha
 alpha
@@ -434,13 +450,16 @@ Errors of prediction within sample 1880-1930
 ```{r}
 yhat <- fitted(HWdata)[,1]
 #I remove the first observation
-data_ts_sub_2 <- data_ts_sub[-1]
+ts_data_sub_removed <- ts_data_sub[-1]
+
 #MAE
-mean(abs(data_ts_sub_2-yhat))
+mean(abs(ts_data_sub_removed-yhat))
+
 #MAPE
-mean(abs(data_ts_sub_2-yhat)/data_ts_sub_2)
+mean(abs(ts_data_sub_removed-yhat)/ts_data_sub_removed)
+
 #MSE
-mean(abs(data_ts_sub_2-yhat)^(2))
+mean(abs(ts_data_sub_removed-yhat)^(2))
 ```
 
 ## 2.2 One-step-ahead predictions
@@ -450,18 +469,18 @@ mean(abs(data_ts_sub_2-yhat)^(2))
 ```{r}
 par(mfrow=c(3,2), cex=.4)
 #alpha 0.1
-HWdata_01 <- HoltWinters(data_ts_sub, alpha=.1, beta=F, gamma=F)
+HWdata_01 <- HoltWinters(ts_data_sub, alpha=.1, beta=F, gamma=F)
 plot(HWdata_01)
 #alpha 0.3
-HWdata_03 <- HoltWinters(data_ts_sub, alpha=.3, beta=F, gamma=F)
+HWdata_03 <- HoltWinters(ts_data_sub, alpha=.3, beta=F, gamma=F)
 plot(HWdata_03)
 #alpha 0.1
 plot(HWdata)
 #alpha 0.7
-HWdata_07 <- HoltWinters(data_ts_sub, alpha=.7, beta=F, gamma=F)
+HWdata_07 <- HoltWinters(ts_data_sub, alpha=.7, beta=F, gamma=F)
 plot(HWdata_07)
 #alpha 0.9
-HWdata_09 <- HoltWinters(data_ts_sub, alpha=.9, beta=F, gamma=F)
+HWdata_09 <- HoltWinters(ts_data_sub, alpha=.9, beta=F, gamma=F)
 plot(HWdata_09)
 
 par(mfrow=c(1,1))
