@@ -50,3 +50,17 @@ rsconnect/
 
 # I'm still trying to understand what it is
 .DS_Store
+
+# I have no fucking clue what this is but I found it in Quarto's GitHub
+
+.Rproj.user
+.Rhistory
+
+.vscode
+
+inst/doc
+docs
+
+/.quarto/
+/doc/
+/Meta/
