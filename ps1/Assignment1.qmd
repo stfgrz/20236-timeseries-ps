@@ -285,11 +285,9 @@ print(graph_4)
   Valuta modello con cambio a 1960-1970
   
   Come seasonality qualcuno si aspetta estati più caldi dell'inverno 
-  
-  
 
 
-## 1.4 Noise and Uncertainty:
+## 1.3 Noise and Uncertainty:
 
 -   Briefly comment on the variation that is unexplained by the decomposition. Are there anomalies in the residuals?
 
@@ -357,7 +355,7 @@ It appears evident that the mother of whoever was resposible for the observation
 
 ```{r}
 filtered_residuals_dm_df <- residuals_dm_df %>%
-  filter(value > quantile(value, 0.12, na.rm = TRUE) & value < quantile(value, 0.92, na.rm = TRUE))
+  filter(value > quantile(value, 0.135, na.rm = TRUE) & value < quantile(value, 0.22, na.rm = TRUE))
 
 filtered_residuals_dm_df$y_bin <- cut(filtered_residuals_dm_df$value, breaks = 100)
 ```
@@ -365,6 +363,8 @@ filtered_residuals_dm_df$y_bin <- cut(filtered_residuals_dm_df$value, breaks = 1
 Now just plot everything again:
 
 ```{r}
+#| label: RIFAI ANALISI
+
 graph_2a <- ggplot(residuals_da_df, aes(x = date, y = value, color = y_bin)) +
   geom_jitter(size = 0.36, linewidth = 0.01) +
   scale_color_viridis_d(option = "H", guide = FALSE) +
@@ -388,7 +388,7 @@ grid.arrange(graph_2a, graph_2b, graph_2c, nrow = 1)
 
 To approach the task in a more rigurous way, we can also implement a series of statistical tests, namely:
 
-### 1.4.1 Ljung-Box Test
+### 1.3.1 Ljung-Box Test
 
 ```{r}
 Box.test(residuals_da, lag = 12, type = "Ljung-Box")
@@ -396,7 +396,7 @@ Box.test(residuals_dm, lag = 12, type = "Ljung-Box")
 Box.test(residuals_stl, lag = 12, type = "Ljung-Box")
 ```
 
-### 1.4.2 Shapiro Test
+### 1.3.2 Shapiro Test
 
 ```{r}
 shapiro.test(residuals_da)
@@ -404,7 +404,7 @@ shapiro.test(residuals_dm)
 shapiro.test(residuals_stl)
 ```
 
-### 1.4.3 ACF Test
+### 1.3.3 ACF Test
 
 ```{r}
 acf(na.omit(residuals_da), main="ACF of residuals - additive decomposition")
@@ -426,6 +426,8 @@ Taking the values for the subset 1880-1930 and plotting
 data_sub <- data[1:51,]
 ts_data_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
 ```
+
+As we don't notice significant trends we now opt for a simple exponential smoothing (it will be relaxed later on as a seasonal component looks evident from the data)
 
 ## 2.1 Values of the α parameter
 
@@ -449,8 +451,8 @@ Errors of prediction within sample 1880-1930
 
 ```{r}
 yhat <- fitted(HWdata)[,1]
-#I remove the first observation
-ts_data_sub_removed <- ts_data_sub[-1]
+
+ts_data_sub_removed <- ts_data_sub[-1] #Remove the first observation
 
 #MAE
 mean(abs(ts_data_sub_removed-yhat))
@@ -469,21 +471,48 @@ mean(abs(ts_data_sub_removed-yhat)^(2))
 ```{r}
 par(mfrow=c(3,2), cex=.4)
 #alpha 0.1
-HWdata_01 <- HoltWinters(ts_data_sub, alpha=.1, beta=F, gamma=F)
+HWdata_01 <- HoltWinters(ts_data_sub, alpha = 0.1, beta = FALSE, gamma = FALSE)
 plot(HWdata_01)
+
 #alpha 0.3
-HWdata_03 <- HoltWinters(ts_data_sub, alpha=.3, beta=F, gamma=F)
+HWdata_03 <- HoltWinters(ts_data_sub, alpha = 0.3, beta = FALSE, gamma = FALSE)
 plot(HWdata_03)
-#alpha 0.1
+
+#alpha 0.5
 plot(HWdata)
+
 #alpha 0.7
-HWdata_07 <- HoltWinters(ts_data_sub, alpha=.7, beta=F, gamma=F)
+HWdata_07 <- HoltWinters(ts_data_sub, alpha = 0.7, beta = FALSE, gamma = FALSE)
 plot(HWdata_07)
+
 #alpha 0.9
-HWdata_09 <- HoltWinters(ts_data_sub, alpha=.9, beta=F, gamma=F)
+HWdata_09 <- HoltWinters(ts_data_sub, alpha = 0.9, beta = FALSE, gamma = FALSE)
 plot(HWdata_09)
 
 par(mfrow=c(1,1))
+```
+
+```{r}
+# Extract fitted values
+smoothed_data <- data.frame(
+  time = time(ts_data_sub_removed),
+  original = as.numeric(ts_data_sub_removed),
+  Alpha_HW =  HWdata$fitted[,1],
+  Alpha_0.1 = HWdata_01$fitted[, 1], 
+  Alpha_0.9 = HWdata_09$fitted[, 1]
+)
+
+# Convert to long format for ggplot
+smoothed_long <- smoothed_data %>%
+  pivot_longer(cols = -time, names_to = "Series", values_to = "Value")
+
+# Plot using ggplot
+ggplot(smoothed_long, aes(x = time, y = Value, color = Series)) +
+  geom_line(linewidth = 0.25) +
+  scale_color_manual(values = c("black", "blue", "red", "black", "purple")) +  # Custom colors
+  labs(title = "Exponential Smoothing with Different Alpha Values",
+       x = "Time", y = "Value", color = "Series") +
+  theme_minimal()
 ```
 
 ## 2.3 Analytic expression of forecast function
@@ -500,11 +529,11 @@ HWdata$gamma
 
 The function should be
 
-$$y_t = -0.0212635 + \epsilon_t$$
+$$
+y_t = `r HWdata$alpha` + \epsilon_t
+$$
 
-as the prediction is assumed to be be constant
-
-where the seasonal component is a dummy for all the seasonal variables
+as the prediction is assumed to be be constant.
 
 ## 2.4 Forecastst from 1930
 
@@ -526,6 +555,12 @@ plot.ts(abs((HW1080.pred[,1] - (observed_data)/observed_data)), main = "Absolute
 plot.ts((HW1080.pred[,1] - (observed_data))^2, main = "Squared Error")
 
 ```
+
+#### NOTES
+
+  - Sistema la flat prediction 
+  
+#### 2.4.1 Comment on 2.4
 
 -   The 1st plot compares the flat prediction with the observed data
 -   The 2nd plot show the raw forecast error.
