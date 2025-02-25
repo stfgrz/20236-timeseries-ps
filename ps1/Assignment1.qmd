@@ -530,7 +530,7 @@ HWdata$gamma
 The function should be
 
 $$
-y_t = `r HWdata$alpha` + \epsilon_t
+y_t = `HWdata$alpha` + \epsilon_t
 $$
 
 as the prediction is assumed to be be constant.
