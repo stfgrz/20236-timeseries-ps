@@ -400,8 +400,7 @@ graph_2c <- ggplot(residuals_stl_df, aes(x = date, y = value, color = y_bin)) +
 grid.arrange(graph_2a, graph_2b, graph_2c, nrow = 1)
 ```
 
-It appears evident that the mother of whoever was resposible for the observation and reporting of the outliers was a puttana; we will hence need to do minimal data clearning:
-
+Let's try to clean the data
 ```{r}
 filtered_residuals_dm_df <- residuals_dm_df %>%
   filter(value > quantile(value, 0.135, na.rm = TRUE) & value < quantile(value, 0.22, na.rm = TRUE))
@@ -615,12 +614,45 @@ plot.ts(abs((HW1080.pred[,1] - (observed_data)/observed_data)), main = "Absolute
 plot.ts((HW1080.pred[,1] - (observed_data))^2, main = "Squared Error")
 
 ```
-#### 2.4.1 Comment on 2.4
+#### Addenda
 
--   The 1st plot compares the flat prediction with the observed data
--   The 2nd plot show the raw forecast error.
--   The 3rd plot shows the error in absolute value
--   The 4th plot shows the absolute percentage error
--   The 5th plot shows the squared error
+```{r}
+HWdata_seas2 <- HoltWinters(data_ts, seasonal = "additive")
+HWdata_seas2$alpha
+plot(HWdata_seas2)
+plot(fitted(HWdata_seas2))
+```
 
-Interpretation: the forecast error increases as time goes on as the trend fitting the general data seems to show an average increase in the deviation from the baseline value. Hence, it is plausible that assuming the flat prediction stemming from 1880-1930 underestimates temperatures of following periods.
+```{r}
+yhat <- fitted(HWdata_seas2)[,1]
+data_2 <- data_ts[-c(1:12)]
+#MAE
+mean(abs(data_2-yhat))
+#MAPE
+mean(abs(data_2-yhat)/data_2)
+#MSE
+mean(abs(data_2-yhat)^(2))
+```
+
+```{r}
+HWdata_seas2$coefficients
+```
+
+```{r}
+#prediction 
+observed_data <- as.vector(ts_data)[613:1692]
+HW1080.pred_seas2 <- predict(HWdata_seas2, 1080, prediction.interval = TRUE, level=0.95)
+#prediction and observed data
+ts.plot(observed_data,ts(HW1080.pred_seas2[,1], start = c(1931,1), frequency = 12))
+par(mfrow=c(2,2), cex=.4)
+#raw error
+plot.ts((HW1080.pred_seas2[,1]) - (observed_data), main = "Raw error")
+#absolute value error
+plot.ts(abs(HW1080.pred_seas2[,1] - (observed_data)), main = "Absolute value error")
+#Absolute Percentage Value
+plot.ts(abs((HW1080.pred_seas2[,1] - (observed_data))/observed_data), main = "Absolute Percentage Value Error")
+#squared error
+plot.ts((HW1080.pred_seas2[,1] - (observed_data))^2, main = "Squared Error")
+par(mfrow=c(1,1))
+
+```
