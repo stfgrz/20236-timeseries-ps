@@ -45,6 +45,7 @@ library(timechange)
 ## Data
 
 ```{r}
+#| label: Load data
 data <- read.csv("gistemp.txt", header = TRUE) 
 monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
 ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
@@ -131,6 +132,7 @@ graph_1 <- ggplot(ts_df, aes(x = date, y = value)) + # We specify the dataframe 
   )                                               
   
 print(graph_1)
+ggsave("graph_1.pdf", plot = graph_1, device = "pdf", width = 10, height = 6, units = "in")
 ```
 
 > Are there periods of acceleration or deceleration in warming?
@@ -191,7 +193,7 @@ Now we just merge these 3 values into a dataframe to plot it:
 seasonal_comparison_df <- data.frame(
   time = time(seasonal_da_ly),
   additive = as.numeric(seasonal_da_ly),
-# multiplicative = as.numeric(seasonal_dm_ly),
+# multiplicative = as.numeric(seasonal_dm_ly),    We exclude this as it doesn't make a lot of sense (a seasonality difference of 12°C is too significant)
   stl = as.numeric(seasonal_stl_ly)
 )
 
@@ -213,13 +215,10 @@ graph_3 <- ggplot(seasonal_comparison_df_long, aes(x = time, y = value, color = 
   )
 
 print(graph_3)
+ggsave("graph_3.pdf", plot = graph_3, device = "pdf", width = 10, height = 6, units = "in")
 ```
 
-#### NOTES
-  
-  Parlare di temperatura globale.
-
-> We can safely state that the methodology that we apply does not effect drastic differences on the calculation of the seasonal component.
+ We can safely state that the methodology that we apply does not effect drastic differences on the calculation of the seasonal component.
 
 ### 1.2.2 Comparison between different time frames
 
@@ -255,7 +254,13 @@ for (start in start_years) {
   
   seasonal_indices <- rbind(seasonal_indices, seasonal_mean)
 }
+
+seasonal_indices$Month <- factor(seasonal_indices$Month,
+                                         levels = 1:12,
+                                         labels = month.name)
 ```
+
+#### 1.2.2.a
 
 ```{r}
 graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
@@ -263,9 +268,10 @@ graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period,
   geom_line(size = 0.5) +
   geom_point(size = 0.75) +
   scale_color_viridis_d(option = "H") +
-  ggtitle("Evolution of Seasonal Component (30-Year Windows)") +
+  ggtitle("Evolution of Seasonal Component") +
   ylab("Average Seasonal Component") +
   xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
   theme_minimal() +
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
@@ -275,18 +281,61 @@ graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period,
   )
 
 print(graph_4)
+ggsave("graph_4.pdf", plot = graph_4, device = "pdf", width = 8, height = 6, units = "in")
 ```
-#### NOTES
+#### 1.2.2.b
 
-  Non sappiamo come trattare l'overlap, probabilmente non ci sono conseguenze rilevanti
-  
-  Ha molto senso se si considera fino al 1950 (anno di arrivo, considera 1949), in quanto quando aumenta il trend nel 1950 -ca si mischiano gli effetti.
-  
-  Valuta modello con cambio a 1960-1970
-  
-  Come seasonality qualcuno si aspetta estati più caldi dell'inverno 
+From 1880-1909 to 1940-1969
 
+```{r}
+seasonal_indices_before <- seasonal_indices[1:84, ]
 
+graph_5 <- ggplot(seasonal_indices_before, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(size = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "C") +
+  ggtitle("Evolution of Seasonal Component") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )
+
+print(graph_5)
+ggsave("graph_5.pdf", plot = graph_5, device = "pdf", width = 8, height = 6, units = "in")
+```
+
+From 1950-1979 to 1990-2019
+
+```{r}
+seasonal_indices_after <- seasonal_indices[85:144, ]
+
+graph_6 <- ggplot(seasonal_indices_after, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(size = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "D") +
+  ggtitle("Evolution of Seasonal Component") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "gray20")
+  )
+
+print(graph_6)
+ggsave("graph_6.pdf", plot = graph_6, device = "pdf", width = 8, height = 6, units = "in")
+```
 ## 1.3 Noise and Uncertainty:
 
 -   Briefly comment on the variation that is unexplained by the decomposition. Are there anomalies in the residuals?
@@ -407,9 +456,21 @@ shapiro.test(residuals_stl)
 ### 1.3.3 ACF Test
 
 ```{r}
-acf(na.omit(residuals_da), main="ACF of residuals - additive decomposition")
-acf(na.omit(residuals_dm), main="ACF of residuals - multiplicative decomposition")
-acf(na.omit(residuals_stl), main="ACF of residuals - stl decomposition")
+acf(na.omit(residuals_da), 
+    lag.max = NULL, 
+    type = "covariance",
+    plot = TRUE,
+    main="ACF of residuals - additive decomposition")
+acf(na.omit(residuals_dm), 
+    lag.max = NULL, 
+    type = "covariance",
+    plot = TRUE, 
+    main="ACF of residuals - multiplicative decomposition")
+acf(na.omit(residuals_stl), 
+    lag.max = NULL, 
+    type = "covariance",
+    plot = TRUE,
+    main="ACF of residuals - stl decomposition")
 ```
 
 ------------------------------------------------------------------------
