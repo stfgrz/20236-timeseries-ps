@@ -484,8 +484,9 @@ acf(na.omit(residuals_stl),
 Taking the values for the subset 1880-1930 and plotting
 
 ```{r}
-data_sub <- data[1:51,]
+data_sub <- monthly_data[1:51,]
 ts_data_sub <- ts(as.vector(t(data_sub)), start = c(1880,1), frequency = 12)
+plot(ts_data_sub)
 ```
 
 As we don't notice significant trends we now opt for a simple exponential smoothing (it will be relaxed later on as a seasonal component looks evident from the data)
@@ -558,7 +559,7 @@ par(mfrow=c(1,1))
 smoothed_data <- data.frame(
   time = time(ts_data_sub_removed),
   original = as.numeric(ts_data_sub_removed),
-  Alpha_HW =  HWdata$fitted[,1],
+  Alpha_HW =  HWdata$fitted[, 1],
   Alpha_0.1 = HWdata_01$fitted[, 1], 
   Alpha_0.9 = HWdata_09$fitted[, 1]
 )
@@ -569,8 +570,8 @@ smoothed_long <- smoothed_data %>%
 
 # Plot using ggplot
 ggplot(smoothed_long, aes(x = time, y = Value, color = Series)) +
-  geom_line(linewidth = 0.25) +
-  scale_color_manual(values = c("black", "blue", "red", "black", "purple")) +  # Custom colors
+  geom_line(linewidth = 0.25, ) +
+  scale_color_manual(values = c("purple", "steelblue", "forestgreen", "orange", "firebrick")) +  # Custom colors
   labs(title = "Exponential Smoothing with Different Alpha Values",
        x = "Time", y = "Value", color = "Series") +
   theme_minimal()
@@ -580,18 +581,16 @@ ggplot(smoothed_long, aes(x = time, y = Value, color = Series)) +
 
 > Specify the analytic expression of the forecast function of the exponential smoothing algorithm for different time steps.
 
-Explicit function
+Coefficients
 
 ```{r}
-HWdata$alpha
-HWdata$beta
-HWdata$gamma
+HWdata$coefficients
 ```
 
 The function should be
 
 $$
-y_t = `HWdata$alpha` + \epsilon_t
+y_t = -0.0212635 + \epsilon_t
 $$
 
 as the prediction is assumed to be be constant.
@@ -616,12 +615,6 @@ plot.ts(abs((HW1080.pred[,1] - (observed_data)/observed_data)), main = "Absolute
 plot.ts((HW1080.pred[,1] - (observed_data))^2, main = "Squared Error")
 
 ```
-
-#### NOTES
-
-  - Sistema la flat prediction 
-  - Capisci come (step precedente)
-  
 #### 2.4.1 Comment on 2.4
 
 -   The 1st plot compares the flat prediction with the observed data
