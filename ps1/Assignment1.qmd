@@ -614,6 +614,7 @@ plot.ts(abs((HW1080.pred[,1] - (observed_data)/observed_data)), main = "Absolute
 plot.ts((HW1080.pred[,1] - (observed_data))^2, main = "Squared Error")
 
 ```
+
 #### Addenda
 
 ```{r}
