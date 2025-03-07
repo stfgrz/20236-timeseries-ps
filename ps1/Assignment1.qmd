@@ -292,7 +292,7 @@ seasonal_indices_before <- seasonal_indices[1:84, ]
 
 graph_5 <- ggplot(seasonal_indices_before, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
   geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
-  geom_line(size = 0.5) +
+  geom_line(linewidth = 0.5) +
   geom_point(size = 0.75) +
   scale_color_viridis_d(option = "C") +
   ggtitle("Evolution of Seasonal Component") +
@@ -318,7 +318,7 @@ seasonal_indices_after <- seasonal_indices[85:144, ]
 
 graph_6 <- ggplot(seasonal_indices_after, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
   geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
-  geom_line(size = 0.5) +
+  geom_line(linewidth = 0.5) +
   geom_point(size = 0.75) +
   scale_color_viridis_d(option = "D") +
   ggtitle("Evolution of Seasonal Component") +

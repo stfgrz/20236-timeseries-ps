@@ -1,0 +1,79 @@
+---
+title: "Assignment 2"
+author: "Stefano Graziosi, Gabriele Molè, Laura Loschiavo, Giovanni Carron"
+format: html
+editor: visual
+---
+
+```{r echo = "FALSE"}
+#| label: Load the relevant libraries
+
+# To solve conflicts
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+
+# Time series packages
+library(dlm)
+library(TSstudio)
+library(feasts)
+library(tseries)
+  # Necessary packages for quantmod
+  library(zoo)
+  library(xts)
+library(quantmod)
+
+#Specifically for Assignment 2
+library(depmixS4)
+library(HiddenMarkov)
+
+# Datasets
+library(fpp3)
+
+# For fancy plots
+library(ggthemes)
+  # Necessary packages for viridis
+  library(viridisLite)
+library(viridis)
+library(gridExtra)
+
+# Packages related to tidyverse, for data manipulation
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+
+# To handle time changes
+library(timechange)
+```
+
+### Useful Commands
+
+```{r}
+? depmixS4
+```
+
+
+
+```{r}
+? lm
+```
+
+
+
+```{r}
+? glm
+```
+
+
+
+```{r}
+? depmix
+```
+
+
+
+```{r}
+? posterior
+```
+
+
+
+
