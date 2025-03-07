@@ -88,4 +88,10 @@ library(timechange)
 
 # 2. Hidden Markov Models
 
+## 2.1 Part (a)
+
+## 2.2 Part (b)
+
+
+
 
