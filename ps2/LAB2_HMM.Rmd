@@ -1,0 +1,291 @@
+---
+title: '20236 Time Series Analysis: Lab 2'
+header_includes:
+- \usepackage{amsmath}
+- \usepackage{amssymb}
+date: "Sonia Petrone"
+output:
+  pdf_document: default
+  html_document:
+    fig_caption: yes
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.align = "center")
+
+library(depmixS4)
+library(ggplot2)
+library(tidyverse)
+```
+
+\bigskip
+
+This LAB is an introduction to Hidden Markov Models (HMMs) with R. 
+
+The first question is: What is available in R for HMMs? Explore that yourself! You'll find several packages, including packages 
+"depmixS4" and "HiddenMarkov".  Here we use package "depmixS4" . 
+A reference is: Visser, I. and Speekenbrink, M. (2010) "depmixS4: An R Package for Hidden Markov Models", *Journal of Statistical Software*, 36. 
+
+Load packages depmixS4 in the Rchunk at the beginning of the file.Rmd. 
+(you may also want to install and load the auxiliary packages  tidyverse, ggplott2, magritte,...for fancier stuff). 
+
+\bigskip
+
+**EXAMPLE 1 : Nile river data**
+
+Let's look again at the Nile river data
+
+```{r , out.width='50%'}
+plot(Nile, type="o", pch=19, cex=.3, main="Nile river data")
+```
+
+We could think of the simplest model for these data
+$$ Y_t = \mu + \epsilon_t,  \quad \epsilon_t \overset{iid}{\sim} N(0, \sigma^2) $$
+
+However, the data clearly show a change point in the river's level: a model that allows $\mu$ to change over time is more appropriate. 
+We fit a HMM for the Nile river data, using package depmixS4. 
+
+```{r}
+?depmixS4
+```
+
+In the **Details** in the help page, we read: "Models are specified through the depmix function, which uses standard *glm* style arguments to specify the observed distributions"
+
+Thus, let us first give some preliminaries:  R functions **lm** (linear models) and **glm** (generalized linear models)
+
+```{r}
+?lm
+# example:  
+x <- c(20, 12, 30, 60, 39, 90, 45, 10, 120, 150)
+y <- 2 * x + rnorm(10)
+out <- lm(y ~ x)
+out
+# to remove the intercept
+out <- lm(y ~ x - 1) 
+# only the intercept
+out <- lm(y ~ 1)
+?glm
+```
+
+We want to specify a Gaussian HMM for the Nile river data, where 
+\begin{equation*}
+\begin{cases}
+Y_t = \mu_1 + \epsilon_t, \quad \epsilon_t \overset{iid}{\sim} N(0, \sigma_1^2)  
+& \text{if the state $S_t=1$} \\
+Y_t = \mu_2 + \epsilon_t, \quad \epsilon_t \overset{iid}{\sim} N(0, \sigma_2^2) 
+&\text{if the state $S_t=2$}.
+\end{cases}
+\end{equation*}
+Thus, the *lm* will only have the intercept.
+
+\bigskip
+
+Let's now fit the above HMM for the Nile data. 
+
+1.  **STEP 1: specify the model.**
+
+ In package depmix, the model is specified by the function 
+```{r}
+?depmix
+```
+
+The data should be provided as a data frame.
+
+```{r}
+is.ts(Nile)
+y <- as.numeric(Nile)  
+model <- depmix(y ~ 1, data=data.frame(y), nstates=2)
+model 
+```
+
+Notice, in the model so specified, the choice of the starting values of the unknown parameters, namely of
+
+ - the initial probabilities for $S_0$;
+
+ - the transition matrix;
+
+ - the parameters $\theta_1=(\mu_1, \sigma_1)$; $\theta_2=(\mu_2, \sigma_2)$. 
+
+\bigskip
+
+\bigskip
+
+2.  **STEP 2: Fit the model, computing the MLEs of the unknown parameters.** 
+```{r MLE}
+fmodel <- fit(model)
+fmodel # logLik and optimization information
+summary(fmodel) # MLEs of the unknown parameters.
+```
+
+You may extract, for instance, the MLE for the mean and standard deviation corresponding to the second hidden state, as follows
+```{r}
+fmodel@response[[2]][[1]]@parameters$coefficients
+fmodel@response[[2]][[1]]@parameters$sd
+```
+
+**Remark**. Whenever we provide an estimate, we should also provide the associated standard error.   
+*Note* that standard errors were not included in the original release of package depMixS4. See the paper by Visser and Speekenbrink (Journal of Statistical Software, 2010), posted on BBoard. 
+And for example read at 
+\verb+https://stat.ethz.ch/pipermail/r-packages/2019/001651.html+ (2019): 
+*“The new 1.4 version of depmixS4 has an important (and much requested!) new
+feature: the possibility to request standard errors of estimated parameters
+through the use of a finite differences approximation of the hessian. As
+this is a critical feature we appreciate your comments and feedback..[….]"*
+
+```{r}
+MLEse=standardError(fmodel)
+```
+
+What are the MLEs?
+```{r, eval=FALSE}
+# str(MLEse)
+MLEse$par
+```
+What are their standard errors? Below are the standard errors of the MLEs of the parameters in the emission distribution in the two states:
+```{r}
+round(MLEse$par, 3)
+round(MLEse$se[7:10], 3)
+```
+
+\bigskip
+
+\bigskip
+3. **STEP 3: decoding** 
+
+```{r}
+? posterior
+# Get the estimated state for each timestep 
+estStates <- posterior(fmodel)
+```
+The first column of the output has the Viterbi states, 
+the other columns have the delta probabilities (see Rabiner, 1989) : 
+```{r}
+estStates[1:5,]
+```
+
+Let us plot the data and the estimated "most likely states"
+
+```{r, out.width='40%'}
+plot(time(Nile), estStates[,1],  cex=.3)
+```
+
+A simple plot of the data with the estimated state-dependent  means
+```{r, out.width='60%'}
+i= estStates[1,1] 
+ii= if(i==1){i+1} else {i-1} 
+estMean1=fmodel@response[[i]][[1]]@parameters$coefficients
+estMean2=fmodel@response[[ii]][[1]]@parameters$coefficients
+estMeans=rep(estMean1, length(Nile)) 
+estMeans[estStates[,1]==ii]=estMean2
+plot(Nile)
+title(main="Nile data and HMM estimated means", cex.main=1)
+points(time(Nile), estMeans,  col="blue", cex=.3)
+
+
+```
+
+For other fancier plots (require additional packages)
+```{r, out.width='60%'}
+results_df <- data.frame(time_index=as.numeric(time(Nile)),
+                    sample_trajectory=y,
+                    estimated_state=estStates[,1])%>% 
+                    gather("variable", "value", -time_index)
+
+plotobj <- ggplot(results_df, aes(time_index, value)) +
+  geom_line() + facet_wrap(variable ~ ., scales="free", ncol=1) +
+  theme_minimal()
+
+plot(plotobj)
+```
+
+\bigskip
+
+\bigskip
+
+**EXAMPLE 2: Poisson HMM.** 
+
+This is an example from 
+
+Zucchini, Mac Donald, Langrock (2016) *Hidden Markov Models for Time Series: An introduction using R*, CRC Press. 
+
+We study the series of annual counts of major earthquakes (i.e. magnitude 7 and above), from 1900 to 2006. 
+
+```{r, out.width='50%'}
+earthquakes <- read.table("http://www.hmms-for-time-series.de/second/data/earthquakes.txt")
+
+earthquakes <- ts(earthquakes[,2], start=1900)
+plot(earthquakes, type="o", pch=19, cex=.3)
+```
+
+When dealing with unbounded counts, a possible choice is a Poisson distribution. Remember
+$$ \text{if} \; Y  \sim Poisson(\lambda), \; \; \; \text{then} \;  E(Y)=V(Y)=\lambda.$$
+
+However, in the timeplot of the data, we notice periods when earthquakes are relatively more frequent than in other periods, suggesting that there may be different values of the intersity $\lambda$, corresponding to different latent states.
+
+We can also infer from the sample mean and variance that the series displays considerable overdispersion relative to the Poisson distribution; therefore, the Poisson distribution (with a constant $\lambda$) is not appropriate to model the earthquake data. 
+
+```{r}
+mean(earthquakes)
+var(earthquakes)
+```
+
+Let's set up a Poisson HMM with 2 latent states. 
+We need to specify *family = poisson()*
+
+```{r}
+mod.phmm <- depmix(earthquakes ~ 1, nstates = 2, ntimes=107, family = poisson())
+
+# Take a look at the default initialization
+mod.phmm
+
+# Fit the model, which is done by EM algorithm 
+f.phmm <- fit(mod.phmm)
+
+# The estimated parameters
+summary(f.phmm)
+# one state  has a smaller Poisson parameter compared to the other state, 
+# correponding to a state with lower rate of earthquakes
+```
+
+Let's now turn to deconding (the most likely state and posterior probabilities of each state at each year) 
+```{r}
+estStates=posterior(f.phmm)
+```
+
+To see the relationship between observations and most likely states in a clearer way, let's plot them together
+```{r, out.width='60%'}
+results_df <- data.frame(time_index=time(earthquakes) %>% as.numeric(), 
+sample_trajectory=earthquakes %>% as.numeric(), estimated_state=posterior(f.phmm)$state) %>% 
+  gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() + 
+  facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+```
+
+**What about a HMM with 3 states?**
+
+```{r}
+mod.phmm <- depmix(earthquakes ~ 1, nstates = 3, ntimes=107, family = poisson())
+mod.phmm
+
+f.phmm <- fit(mod.phmm)
+```
+
+What is now the state underlying the highest Poisson intensity?
+```{r,  out.width='60%'}
+
+summary(f.phmm)
+
+results_df <- data.frame(time_index=time(earthquakes) %>% as.numeric(),
+sample_trajectory=earthquakes %>% as.numeric(),
+estimated_state=posterior(f.phmm)$state) %>% 
+  gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() + 
+  facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+```
+
+
+

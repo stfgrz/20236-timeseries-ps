@@ -52,30 +52,40 @@ library(timechange)
 ? depmixS4
 ```
 
-
-
 ```{r}
 ? lm
 ```
-
-
 
 ```{r}
 ? glm
 ```
 
-
-
 ```{r}
 ? depmix
 ```
-
-
 
 ```{r}
 ? posterior
 ```
 
+# 1. Markov Chains
 
+## 1.1 Basic notions on Markov chains
+
+### Exercise 1.1.
+
+### Exercise 1.1.
+
+### Exercise 1.1.
+
+### Exercise 1.1.
+
+## 1.2 Inference for Markov chains
+
+### Exercise 1.2.
+
+### Exercise 1.2.
+
+# 2. Hidden Markov Models
 
 
