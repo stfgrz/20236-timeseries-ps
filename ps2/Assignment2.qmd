@@ -36,6 +36,7 @@ library(ggthemes)
 library(viridis)
 library(gridExtra)
 library(magrittr)
+library(textab)
 
 # Packages related to tidyverse, for data manipulation
 library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
