@@ -1,6 +1,6 @@
 ---
 title: "Assignment 2"
-author: "Stefano Graziosi, Gabriele Molè, Laura Lo Schiavo, Giovanni Carron"
+author: "Gabriele Molè, Stefano Graziosi, Laura Lo Schiavo, Giovanni Carron"
 format: pdf
 editor: visual
 ---
