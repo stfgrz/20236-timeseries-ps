@@ -1,11 +1,9 @@
 ---
 title: "Assignment 2"
-author: "Stefano Graziosi, Gabriele Molè, Laura Loschiavo, Giovanni Carron"
-format: html
+author: "Stefano Graziosi, Gabriele Molè, Laura Lo Schiavo, Giovanni Carron"
+format: pdf
 editor: visual
 ---
-
-### Set-up
 
 ```{r echo = "FALSE"}
 #| label: Load the relevant libraries
@@ -54,13 +52,12 @@ library(timechange)
 
 # Importing the data
 urlfile = "https://raw.githubusercontent.com/stfgrz/20236-timeseries-ps/97a64d30e6a67339343f36fba4ac9bb9ad75dd7e/ps2/data_assHMM.csv"
-data<-read_csv(url(urlfile))
+data<-read_csv(url(urlfile), show_col_types = FALSE)
 
 # Getting the nominal data
 nom_int_data <- data[, 2] 
 ts_data_nom <- ts(as.vector(t(nom_int_data)), start = c(1997, 1), frequency = 12)
 ```
-
 
 ```{r}
 ? depmixS4
@@ -84,10 +81,190 @@ ts_data_nom <- ts(as.vector(t(nom_int_data)), start = c(1997, 1), frequency = 12
 
 # 2. Hidden Markov Models
 
+The dataset provided in the file data_assHMM.cvs (posted on BBoard) provides monthly data including 10 years Italian government bond’s interest rate, inflation represented by the Harmonised Index of Consumer Prices (HICP) and default ratings assigned by the agencies Moody’s and Fitch, in the investment grade range, i.e. from Aaa/AAA to Baa3-/BBB-. The data set collects data for the period January 1997 to July 2019, and it has been built mainly using OECD data.
+
 ## 2.1 Part (a)
+
+### Question 1
+
+Let us focus on the nominal interest rate for the 10 years Italian government bond. In fact, you may want to consider the real interest rate, calculated from the HICP.
+
+> Plot the data and comment briefly if and why a HMM could be a reasonable model.
+
+```{r}
+#plot the dataset for nominal interest rates
+plot.ts(ts_data_nom)
+
+#nominal
+y1 <- as.numeric(ts_data_nom)
+model1 <- depmix(y1 ~ 1, data=data.frame(ts_data_nom), nstates=3)
+model1
+#test for stationarity 
+acf(ts_data_nom)
+kpss.test(ts_data_nom)
+adf.test(ts_data_nom)
+```
+
+A HMM model is better suitable for non-stationary time series. At first visual inspection the series seems to show different means and likely different dispersion over time. We also propose various indirect formal evidence against stationarity. The autocorrelation function does not decrease over time very quickly, suggesting non-stationarity. Both the KPSS and the ADF tests, two common test for assessing stationarity, provide support for non-stationarity.
+
+Given the data it seems likely to observe three different latent states, where the peaks before the 2000 and in the early 2010's seem to represent a recession, the years after 2015 the boom, and stable states the remaining years.
+
+A HMM model might be appropriate for the phenomenon at stake, as financial markets are generally very quick in converging to new equilibria mainly depending on exogenous shocks. Hence, postulating a hidden process guiding such shifts is reasonable.
+
+------------------------------------------------------------------------
+
+### Question 2
+
+Let us indeed use a Hidden Markov Model, with 3 states (representing, say, boom (i.e. less risky, lower interest rates), recession (high risk, high interest rates) and a stable path), and Gaussian emission ditributions, with state-dependent mean and variance.
+
+> Provide the MLEs of the unknown paramters of the model (and their standard errors). Comment briefly.
+
+```{r}
+#nominal interest rates
+fmodel1 <- fit(model1)
+fmodel1
+summary(fmodel1)
+MLEse1=standardError(fmodel1)
+MLEse1
+posterior(fmodel1)$state
+```
+
+Estimated initial probabilities suggest an initial stage at state 3 (recession).
+
+Overall the transition matrix suggests a persistence in state, where the probabilities of remaining in current states are over 95% for both state 1 and state 3. By plotting the data and interpreting state 1 as stability, state 2 as boom and state 3 as recession, the transitions probabilities are then reasonable. It is impossible ( $p_{3,2}$ $=$ $p_{2,3} = 0$) to directly shift from recession to boom (and viceversa). Starting from a stable state, it is more likely to end up in a recession than a boom ($p_{1,3}$ $>$ $p_{1,2}$). FInally, the probability 1 for $p_{2,2}$ is justified as the "classification" of state 2 is limited to the last periods of the dataset and no different state follows a state 2 observation, hence the probability 1.
+
+Emission distributions show intermediate nominal interest rates for stable periods (state 1) and the lowest variance. The highest mean is for recession periods, as expected, as well as the highest variance. Booms, reflecting excitement, show lower interest rates but also higher variability compared to stable periods, yet lower than recessions.
+
+------------------------------------------------------------------------
+
+### Question 3
+
+> Find the optimal state sequence (“deconding”) and plot it, comparing it with the data.
+
+```{r}
+estStates <- posterior(fmodel1)
+plot(time(ts_data_nom), estStates[,1], cex=.3)
+
+#show it with ggplot
+results_df <- data.frame(time_index=time(ts_data_nom) %>% as.numeric(),
+sample_trajectory=ts_data_nom %>% as.numeric(),
+estimated_state=posterior(fmodel1)$state) %>%
+gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() +
+facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+```
 
 ## 2.2 Part (b)
 
+HMMs are particularly useful for time series that present change points. However, one may want to go further, trying to improve prediction of a possible change point through avialble covariates. To this aim, one may use non-homogeneous HMMs, allowing the transition matrix to depend on covariates. A reference is Zucchini, W., MacDonald, I-L. and Langrock, R. (2016) Hidden Markov Models for Time Series: an introduction using R. Chapman and Hall/CRC;and the R package \`depmixS4\` allows this extension, see Visser and Speekenbrink (2010), Journal of Statistical Software– both references are posted on BBoard.
 
+You may want to explore this more general class of HMMs for the data under study here.
 
+```{r}
+data.b <- as.data.frame(data[, 2:7] ) 
+y1 <- as.numeric(ts_data_nom)
+```
 
+### Model 1: baseline model
+
+```{r}
+#| label: only transition probabilities
+
+#model 1b (controlling for inflation)
+mod <- depmix(response = y1 ~ 1, data = data.b, nstates = 3, family = gaussian(),
+              transition = ~ inflation)
+fmodel2 <- fit(mod)
+fmodel2
+summary(fmodel2)
+MLEse2=standardError(fmodel2)
+MLEse2
+posterior(fmodel2)$state
+estStates <- posterior(fmodel2)
+plot(time(ts_data_nom), estStates[,1], cex=.3)
+
+#ggplot
+results_df <- data.frame(time_index=time(ts_data_nom) %>% as.numeric(),
+sample_trajectory=ts_data_nom %>% as.numeric(),
+estimated_state=posterior(fmodel2)$state) %>%
+gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() +
+facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+
+```
+
+### Model 2: controlling for gdp
+
+```{r}
+#| label: model 2b (controlling for gdp)
+
+mod2 <- depmix(response = y1 ~ 1, data = data.b, nstates = 3, family = gaussian(),
+              transition = ~ gdp)
+fmodel3 <- fit(mod2)
+fmodel3
+summary(fmodel3)
+MLEse3=standardError(fmodel3)
+MLEse3
+posterior(fmodel3)$state
+estStates <- posterior(fmodel3)
+plot(time(ts_data_nom), estStates[,1], cex=.3)
+
+#ggplot
+results_df <- data.frame(time_index=time(ts_data_nom) %>% as.numeric(),
+sample_trajectory=ts_data_nom %>% as.numeric(),
+estimated_state=posterior(fmodel3)$state) %>%
+gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() +
+facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+```
+
+### Model 3: controlling for gdp and inflation
+
+```{r}
+#| label: model 3b (controlling for both inflation and GDP)
+
+mod3 <- depmix(response = y1 ~ 1, data = data.b, nstates = 3, family = gaussian(),
+              transition = ~ gdp + inflation)
+fmodel4 <- fit(mod3)
+fmodel4
+summary(fmodel4)
+MLEse4=standardError(fmodel4)
+MLEse4
+posterior(fmodel4)$state
+estStates <- posterior(fmodel4)
+plot(time(ts_data_nom), estStates[,1], cex=.3)
+
+#ggplot
+results_df <- data.frame(time_index=time(ts_data_nom) %>% as.numeric(),
+sample_trajectory=ts_data_nom %>% as.numeric(),
+estimated_state=posterior(fmodel4)$state) %>%
+gather("variable", "value", -time_index)
+
+ggplot(results_df, aes(time_index, value)) + geom_line() +
+facet_wrap(variable ~ ., scales="free", ncol=1) + theme_minimal()
+```
+
+### Results
+
+```{r}
+results_df <- data.frame(
+  time_index = as.numeric(time(ts_data_nom)),
+  sample_trajectory = as.numeric(ts_data_nom),
+  estimated_state_fmodel4 = posterior(fmodel4)$state,
+  estimated_state_fmodel3 = posterior(fmodel3)$state,
+  estimated_state_fmodel2 = posterior(fmodel2)$state
+) %>%
+  gather("variable", "value", -time_index)
+
+# Plot
+ggplot(results_df, aes(time_index, value, color = variable)) +
+  geom_line() +
+  facet_wrap(~ variable, scales = "free", ncol = 1) +
+  theme_minimal() +
+  labs(title = "Comparison of Estimated States from fmodel4 and fmodel2",
+       x = "Time Index",
+       y = "Value") +
+  theme(legend.position = "bottom")
+```
