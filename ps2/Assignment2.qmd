@@ -5,6 +5,8 @@ format: html
 editor: visual
 ---
 
+### Set-up
+
 ```{r echo = "FALSE"}
 #| label: Load the relevant libraries
 
@@ -27,6 +29,7 @@ library(depmixS4)
 library(HiddenMarkov)
 
 # Datasets
+library(readr)
 library(fpp3)
 
 # For fancy plots
@@ -46,7 +49,18 @@ library(tinytex)
 library(timechange)
 ```
 
-### Useful Commands
+```{r}
+#| label: Loading the dataset
+
+# Importing the data
+urlfile = "https://raw.githubusercontent.com/stfgrz/20236-timeseries-ps/97a64d30e6a67339343f36fba4ac9bb9ad75dd7e/ps2/data_assHMM.csv"
+data<-read_csv(url(urlfile))
+
+# Getting the nominal data
+nom_int_data <- data[, 2] 
+ts_data_nom <- ts(as.vector(t(nom_int_data)), start = c(1997, 1), frequency = 12)
+```
+
 
 ```{r}
 ? depmixS4
@@ -67,24 +81,6 @@ library(timechange)
 ```{r}
 ? posterior
 ```
-
-# 1. Markov Chains
-
-## 1.1 Basic notions on Markov chains
-
-### Exercise 1.1.
-
-### Exercise 1.1.
-
-### Exercise 1.1.
-
-### Exercise 1.1.
-
-## 1.2 Inference for Markov chains
-
-### Exercise 1.2.
-
-### Exercise 1.2.
 
 # 2. Hidden Markov Models
 
