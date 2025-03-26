@@ -12,7 +12,7 @@ editor: visual
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 
-# Time series packages
+# Time series
 library(dlm)
 library(TSstudio)
 library(feasts)
