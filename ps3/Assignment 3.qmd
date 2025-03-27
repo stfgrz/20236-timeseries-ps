@@ -1,0 +1,78 @@
+---
+title: "Assignment 3"
+author: "Stefano Graziosi, Gabriele Molè, Laura Lo Schiavo, Giovanni Carron"
+format: pdf
+editor: visual
+---
+
+```{r echo = "FALSE"}
+#| label: Load the relevant libraries
+
+# To solve conflicts
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+
+# Time series
+library(dlm)
+library(TSstudio)
+library(feasts)
+library(tseries)
+  # Necessary packages for quantmod
+  library(zoo)
+  library(xts)
+library(quantmod)
+
+#Specifically for Assignment 2
+library(depmixS4)
+library(HiddenMarkov)
+
+# Datasets
+library(readr)
+library(fpp3)
+
+# For fancy plots
+library(ggthemes)
+  # Necessary packages for viridis
+  library(viridisLite)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
+
+# Packages related to tidyverse, for data manipulation
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+
+# To handle time changes
+library(timechange)
+```
+
+```{r}
+#| label: Load data
+data <- read.csv("gistemp.txt", header = TRUE) 
+monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
+ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
+```
+
+# Research Question
+
+> Consider the GISTEMP data, already used in Assignment 1. Can you envisage a latent signal (representing a latent trend) and read change-points in the temperature behavior along the years?
+
+# Implementation
+
+> Before proceeding with the analysis, obtain the seasonally adjusted time series (i.e. remove the seasonality).
+
+# Hidden Markov Models
+
+> Now explore the use of Hidden Markov Models to answer to the research question. Briefly support the choice of this model to answer the research question.
+  Discuss (briefly but clearly) results and limitations.
+
+## State-dependent level of the temperature
+
+## State-dependent linear trend
+
+## Case 3
+
+## Case 4
+
+## Case 4
