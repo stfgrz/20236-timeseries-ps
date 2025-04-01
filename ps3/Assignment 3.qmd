@@ -8,10 +8,6 @@ editor: visual
 ```{r echo = "FALSE"}
 #| label: Load the relevant libraries
 
-# To solve conflicts
-library(conflicted)
-conflicts_prefer(dplyr::filter)
-
 # Time series
 library(dlm)
 library(TSstudio)
@@ -45,6 +41,11 @@ library(tinytex)
 
 # To handle time changes
 library(timechange)
+
+
+# To solve conflicts
+library(conflicted)
+conflicts_prefer(dplyr::filter)
 ```
 
 ```{r}
