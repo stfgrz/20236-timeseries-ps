@@ -59,14 +59,15 @@ ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
 
 > Consider the GISTEMP data, already used in Assignment 1. Can you envisage a latent signal (representing a latent trend) and read change-points in the temperature behavior along the years?
 
+Ciao sono Laura
+
 # Implementation
 
 > Before proceeding with the analysis, obtain the seasonally adjusted time series (i.e. remove the seasonality).
 
 # Hidden Markov Models
 
-> Now explore the use of Hidden Markov Models to answer to the research question. Briefly support the choice of this model to answer the research question.
-  Discuss (briefly but clearly) results and limitations.
+> Now explore the use of Hidden Markov Models to answer to the research question. Briefly support the choice of this model to answer the research question. Discuss (briefly but clearly) results and limitations.
 
 ## State-dependent level of the temperature
 
