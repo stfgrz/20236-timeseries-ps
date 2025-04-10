@@ -49,3 +49,36 @@ conflicts_prefer(dplyr::filter)
 ```
 
 # Kalman lter for the random walk plus noise model
+
+Consider the Nile data (measurements of the annual ow of the river Nile at Ashwan 1871-1970), available in R (`> ?Nile`).
+
+First, plot the data. The series clearly appears non-stationary, presenting a quite evident change point. A local level model, i.e. a random walk plus noise, may be used to capture the main change point and other minor changes in the level of the Nile river. Let us consider the following random walk plus noise model.
+
+$$
+\begin{split}
+y_t & = \theta_t + v_t \quad \quad v_t \sim \mathcal{N}(0,V) \\
+\theta_t & = \theta_{t-1} + w_t \quad w_t \sim \mathcal{N}(0,W)
+\end{split}
+$$
+
+with the due assumptions.
+
+To start with, assume that the variances are known, $V = 15100$ , $W = 1470$. In fact, they will have to be estimated (next assignment). As the initial distribution, let $\theta_0 \sim \mathcal{N} (1000,1000)$.
+
+## Step 1: Filtering
+
+1.  Compute the filtering estimates
+
+2.  Compute the corresponding standard deviations and plot them. Comment briefly.
+
+3.  Finally, plot the data together with the ltering state estimates and their 0.95 credible intervals.
+
+## Step 2: Online forecasting
+
+1.  Compute the one-step ahead forecasts
+
+2.  Plot the data, together the one-step-ahead forecasts and their 0.95 credible intervals
+
+## Step 3: Signal-to-noise Ratio
+
+## Step 4: Smoothing
