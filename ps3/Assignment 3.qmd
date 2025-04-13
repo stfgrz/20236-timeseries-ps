@@ -18,7 +18,7 @@ library(tseries)
   library(xts)
 library(quantmod)
 
-#Specifically for Assignment 2
+#Specifically for Assignment 2-3
 library(depmixS4)
 library(HiddenMarkov)
 
@@ -59,21 +59,385 @@ ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
 
 > Consider the GISTEMP data, already used in Assignment 1. Can you envisage a latent signal (representing a latent trend) and read change-points in the temperature behavior along the years?
 
-Ciao sono Laura
-
 # Implementation
 
 > Before proceeding with the analysis, obtain the seasonally adjusted time series (i.e. remove the seasonality).
+
+```{r}
+
+decompose_a_data <- decompose(ts_data, type = "additive")
+decompose_m_data <- decompose(ts_data, type = "multiplicative")
+stl_data <- stl(ts_data, s.window = "periodic")
+
+
+# Remove seasonal component
+
+seasonal_stl <- stl_data$time.series[, "seasonal"]
+
+
+deseasoned_a <- ts_data - decompose_a_data$seasonal  
+deseasoned_m <- ts_data - decompose_m_data$seasonal  
+deseasoned_stl <- ts_data - seasonal_stl
+
+# Subset to 1975
+deseasoned_a_data_1975 <- window(deseasoned_a, end = c(1975, 12))
+deseasoned_m_data_1975 <- window(deseasoned_m, end = c(1975, 12))
+deseasoned_stl_1975 <- window(deseasoned_stl, end = c(1975, 12))
+
+# Plot
+#plot(deseasoned_a_data, main = "Deseasoned GISTEMP Data, additive decomposition")
+plot(deseasoned_m, main = "Deseasoned GISTEMP Data, multiplicative decomposition")
+plot(deseasoned_stl, main = "Deseasoned GISTEMP Data, stl decomposition")
+
+#plot(deseasonalized_a_data_1975, main = "Deseasonalized GISTEMP Data (1880-1975), additive decomposition")
+#plot(deseasonalized_m_data_1975, main = "Deseasonalized GISTEMP Data (1880-1975), multiplicative decomposition")
+plot(deseasoned_stl_1975, main = "Deseasoned GISTEMP Data GISTEMP Data (1880-1975), stl decomposition")
+
+```
 
 # Hidden Markov Models
 
 > Now explore the use of Hidden Markov Models to answer to the research question. Briefly support the choice of this model to answer the research question. Discuss (briefly but clearly) results and limitations.
 
+> You might try an HHM with:
+
 ## State-dependent level of the temperature
+
+> i.e. Y_t \| S_t = j \sym N(\mu\_j, \sigma\_j\^2) and decode the signal from the data Fit a 2-state HMM (e.g., "normal" vs. "warming" regimes)
+
+```{r}
+
+# Fit a 2-state HMM (e.g., "normal" vs. "warming" regimes)
+
+y <- as.numeric(deseasoned_stl)
+model <- depmix(y ~ 1, nstates = 2, data = data.frame(y), family = gaussian())
+fmodel <- fit(model)
+
+# Get the estimated state for each timestep
+estStates <- posterior(fmodel)
+
+# Plot
+#plot(time(deseasoned_stl), estStates[,1], cex = .3)
+
+i= estStates[1,1]
+ii= if(i==1){i+1} else {i-1}
+estMean1=fmodel@response[[i]][[1]]@parameters$coefficients
+estMean2=fmodel@response[[ii]][[1]]@parameters$coefficients
+estMeans=rep(estMean1, length(deseasoned_stl))
+estMeans[estStates[,1]==ii]=estMean2
+plot(deseasoned_stl)
+title(main="Nile data and HMM estimated means", cex.main=1)
+points(time(deseasoned_stl), estMeans, col="blue", cex=.3)
+
+```
+
+> Fit a 3-state HMM (e.g., "normal" vs. "warming" regimes)
+
+```{r}
+
+y <- as.numeric(deseasoned_stl)
+model <- depmix(y ~ 1, nstates = 3, data = data.frame(y), family = gaussian())
+fmodel <- fit(model)
+
+# Get the estimated state for each timestep
+estStates <- posterior(fmodel)
+
+# Plot
+plot(time(deseasoned_stl), estStates[,1], cex = .3)
+
+n_states <- fmodel@nstates
+estMeans <- numeric(length(deseasoned_stl))
+for (s in 1:n_states) {
+  state_mean <- fmodel@response[[s]][[1]]@parameters$coefficients
+  estMeans[estStates[,1] == s] <- state_mean
+}
+plot(deseasoned_stl, main = "HMM Regime Means (Multiple States)")
+points(time(deseasoned_stl), estMeans, col = "blue", cex = 0.3)
+
+```
+
+## up to 1975
+
+> Fit a 2-state HMM (e.g., "normal" vs. "warming" regimes)
+
+```{r}
+
+# Fit a 2-state HMM (e.g., "normal" vs. "warming" regimes)
+
+y <- as.numeric(deseasoned_stl_1975)
+model <- depmix(y ~ 1, nstates = 2, data = data.frame(y), family = gaussian())
+fmodel <- fit(model)
+
+# Get the estimated state for each timestep
+estStates <- posterior(fmodel)
+
+# Plot
+#plot(time(deseasoned_stl), estStates[,1], cex = .3)
+
+i= estStates[1,1]
+ii= if(i==1){i+1} else {i-1}
+estMean1=fmodel@response[[i]][[1]]@parameters$coefficients
+estMean2=fmodel@response[[ii]][[1]]@parameters$coefficients
+estMeans=rep(estMean1, length(deseasoned_stl_1975))
+estMeans[estStates[,1]==ii]=estMean2
+plot(deseasoned_stl_1975)
+title(main="Nile data and HMM estimated means", cex.main=1)
+points(time(deseasoned_stl_1975), estMeans, col="blue", cex=.3)
+
+
+```
+
+> Fit a 3-state HMM (e.g., "normal" vs. "warming" regimes)
+
+```{r}
+
+y <- as.numeric(deseasoned_stl_1975)
+model <- depmix(y ~ 1, nstates = 3, data = data.frame(y), family = gaussian())
+fmodel <- fit(model)
+
+# Get the estimated state for each timestep
+estStates <- posterior(fmodel)
+
+# Plot
+#plot(time(deseasoned_stl_1975), estStates[,1], cex = .3)
+
+n_states <- fmodel@nstates
+estMeans <- numeric(length(deseasoned_stl_1975))
+
+for (s in 1:n_states) {
+  state_mean <- fmodel@response[[s]][[1]]@parameters$coefficients
+  estMeans[estStates[,1] == s] <- state_mean
+}
+plot(deseasoned_stl_1975, main = "HMM Regime Means (Multiple States)")
+points(time(deseasoned_stl_1975), estMeans, col = "blue", cex = 0.3)
+
+```
 
 ## State-dependent linear trend
 
+> i.e. Y_t \| S_t = j \sym N(\alpha\_j + \beta\_jt, \sigma\_j\^2)
+
+```{r}
+
+# Convert the deseasoned STL data to a data frame
+deseasoned_df <- data.frame(
+  temp_anomaly = as.numeric(deseasoned_stl),
+  time = 1:length(deseasoned_stl)
+)
+
+# Remove NA values (if any at the ends from STL decomposition)
+deseasoned_df <- na.omit(deseasoned_df)
+
+# Fit HMM with 2 states and a state-dependent linear trend
+n_states <- 2  # Try 3 as well to compare
+
+set.seed(123)  # For reproducibility
+
+mod <- depmix(temp_anomaly ~ time, 
+              data = deseasoned_df, 
+              nstates = n_states, 
+              family = gaussian())
+
+fit_mod <- fit(mod, verbose = TRUE)
+
+# View model summary
+summary(fit_mod)
+
+# Posterior probabilities and state sequence
+posterior_probs <- posterior(fit_mod)
+deseasoned_df$state <- posterior_probs$state
+
+ggplot(deseasoned_df, aes(x = time, y = temp_anomaly, color = factor(state))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(color = "Hidden State",
+       x = "Time (months since Jan 1880)",
+       y = "Deseasoned Temperature Anomaly") +
+  theme_minimal()
+
+
+
+
+
+```
+
+> Fit a 3-state HMM (e.g., "normal" vs. "warming" regimes)
+
+```{r}
+
+# Convert the deseasoned STL data to a data frame
+deseasoned_df <- data.frame(
+  temp_anomaly = as.numeric(deseasoned_stl),
+  time = 1:length(deseasoned_stl)
+)
+
+# Remove NA values (if any at the ends from STL decomposition)
+deseasoned_df <- na.omit(deseasoned_df)
+
+# Fit HMM with 2 states and a state-dependent linear trend
+n_states <- 3  # Try 3 as well to compare
+
+set.seed(123)  # For reproducibility
+
+mod <- depmix(temp_anomaly ~ time, 
+              data = deseasoned_df, 
+              nstates = n_states, 
+              family = gaussian())
+
+fit_mod <- fit(mod, verbose = TRUE)
+
+# View model summary
+summary(fit_mod)
+
+# Posterior probabilities and state sequence
+posterior_probs <- posterior(fit_mod)
+deseasoned_df$state <- posterior_probs$state
+
+ggplot(deseasoned_df, aes(x = time, y = temp_anomaly, color = factor(state))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(color = "Hidden State",
+       x = "Time (months since Jan 1880)",
+       y = "Deseasoned Temperature Anomaly") +
+  theme_minimal()
+
+```
+
+```{r}
+# Convert the deseasoned STL data to a data frame
+deseasoned_df <- data.frame(
+  temp_anomaly = as.numeric(deseasoned_stl_1975),
+  time = 1:length(deseasoned_stl_1975)
+)
+
+# Remove NA values (if any at the ends from STL decomposition)
+deseasoned_df <- na.omit(deseasoned_df)
+
+# Fit HMM with 2 states and a state-dependent linear trend
+n_states <- 2  # Try 3 as well to compare
+
+set.seed(123)  # For reproducibility
+
+mod <- depmix(temp_anomaly ~ time, 
+              data = deseasoned_df, 
+              nstates = n_states, 
+              family = gaussian())
+
+fit_mod <- fit(mod, verbose = TRUE)
+
+# View model summary
+summary(fit_mod)
+
+# Posterior probabilities and state sequence
+posterior_probs <- posterior(fit_mod)
+deseasoned_df$state <- posterior_probs$state
+
+ggplot(deseasoned_df, aes(x = time, y = temp_anomaly, color = factor(state))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(color = "Hidden State",
+       x = "Time (months since Jan 1880)",
+       y = "Deseasoned Temperature Anomaly") +
+  theme_minimal()
+```
+
+```{r}
+# Convert the deseasoned STL data to a data frame
+deseasoned_df <- data.frame(
+  temp_anomaly = as.numeric(deseasoned_stl_1975),
+  time = 1:length(deseasoned_stl_1975)
+)
+
+# Remove NA values (if any at the ends from STL decomposition)
+deseasoned_df <- na.omit(deseasoned_df)
+
+# Fit HMM with 2 states and a state-dependent linear trend
+n_states <- 3  # Try 3 as well to compare
+
+set.seed(123)  # For reproducibility
+
+mod <- depmix(temp_anomaly ~ time, 
+              data = deseasoned_df, 
+              nstates = n_states, 
+              family = gaussian())
+
+fit_mod <- fit(mod, verbose = TRUE)
+
+
+
+# Posterior probabilities and state sequence
+posterior_probs <- posterior(fit_mod)
+deseasoned_df$state <- posterior_probs$state
+
+
+# Plot
+ggplot(deseasoned_df, aes(x = time, y = temp_anomaly, color = factor(state))) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(color = "Hidden State",
+       x = "Time (months since Jan 1880)",
+       y = "Deseasoned Temperature Anomaly") +
+  theme_minimal()
+```
+
 ## Case 3
+
+```{r}
+# Create lagged version of temp_anomaly
+deseasoned_df <- deseasoned_df %>%
+  mutate(temp_anomaly_lag1 = dplyr::lag(temp_anomaly)) %>%
+  na.omit()  # Drop first NA row
+
+# Set number of states
+n_states <- 2
+
+set.seed(123)
+
+# Fit model with lag and time as covariates
+mod_ar <- depmix(temp_anomaly ~ temp_anomaly_lag1 + time, 
+                 data = deseasoned_df, 
+                 nstates = n_states, 
+                 family = gaussian())
+
+fit_ar <- fit(mod_ar, verbose = TRUE)
+
+# Add posterior state estimates
+posterior_probs <- posterior(fit_ar)
+deseasoned_df$state <- posterior_probs$state
+
+# Convert the state variable to a factor (in case it's not already)
+deseasoned_df$state <- as.factor(deseasoned_df$state)
+
+# Create an empty plot with grey points
+p <- ggplot(deseasoned_df, aes(x = time, y = temp_anomaly)) +
+  geom_point(color = "grey60", alpha = 0.5) +
+  labs(color = "Hidden State",
+       x = "Time (months since Jan 1880)",
+       y = "Deseasoned Temp Anomaly") +
+  theme_minimal()
+
+# Define colors for each state (adjust the number of colors based on the states)
+state_colors <- scales::hue_pal()(length(unique(deseasoned_df$state)))
+
+# Loop over each state and fit a linear regression for the entire time series
+for (s in levels(deseasoned_df$state)) {
+  state_data <- deseasoned_df %>%
+    filter(state == s)
+  
+  # Fit the model for each state
+  fit <- lm(temp_anomaly ~ temp_anomaly_lag1 + time, data = state_data)
+  state_data$pred <- predict(fit, newdata = state_data)
+  
+  # Add the regression line for the current state to the plot
+  p <- p + geom_line(data = state_data,
+                     aes(x = time, y = pred),
+                     color = state_colors[as.numeric(s)],  # Color by state
+                     size = 0.8)
+}
+
+# Show the plot
+print(p)
+```
 
 ## Case 4
 
