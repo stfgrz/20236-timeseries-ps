@@ -65,20 +65,121 @@ with the due assumptions.
 
 To start with, assume that the variances are known, $V = 15100$ , $W = 1470$. In fact, they will have to be estimated (next assignment). As the initial distribution, let $\theta_0 \sim \mathcal{N} (1000,1000)$.
 
+```{r}
+df <- Nile
+
+nile_df <- data.frame(
+  Y = as.numeric(time(Nile)),
+  Flow = as.numeric(Nile)
+)
+```
+
+
+```{r}
+ggplot(nile_df, aes(x = Y, y = Flow)) +
+  geom_line(color = "orange", size = 1) +     # Draw the line for the time series
+  geom_point(color = "darkred", size = 1.2) +        # Add points to highlight each annual measurement
+  labs(
+    title = "Annual Flow of the Nile River",
+    subtitle = "Data from the built-in R 'Nile' dataset",
+    x = "Year",
+    y = "Flow (10^3 cubic meters per second)"
+  ) +
+  theme_minimal() +                                # Use a minimal theme for a clean appearance
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
+```
+
+
 ## Step 1: Filtering
 
-1.  Compute the filtering estimates
+> 1.  Compute the filtering estimates
 
-2.  Compute the corresponding standard deviations and plot them. Comment briefly.
+```{r}
+T <- length(y)
 
-3.  Finally, plot the data together with the ltering state estimates and their 0.95 credible intervals.
+# First of all, store the values for the variances
+V <- 15100
+W <- 1470
+
+# To initialise the filters
+m0 <- 1200    # initial mean
+P0 <- 1000    # initial variance
+m_filt <- numeric(T)   # will store E(theta_t | y_{1:t})
+P_filt <- numeric(T)   # will store Var(theta_t | y_{1:t})
+
+# We'll keep temporary variables for the one-step-ahead predictions
+m_pred <- m0
+P_pred <- P0
+
+for(t in 1:T){
+  # -- Update Step
+    # Kalman gain
+  K_t <- P_pred / (P_pred + V)
+  
+  # Filtered estimates, given observation y[t]
+  m_filt[t] <- m_pred + K_t * (y[t] - m_pred)
+  P_filt[t] <- (1 - K_t) * P_pred
+  
+  # -- Predict Step
+    # The next time step's prior (one-step-ahead prediction)
+  m_pred <- m_filt[t]
+  P_pred <- P_filt[t] + W
+}
+```
+
+> 2.  Compute the corresponding standard deviations and plot them. Comment briefly.
+
+```{r}
+sd_filt <- sqrt(P_filt)
+upper_95 <- m_filt + 1.96 * sd_filt
+lower_95 <- m_filt - 1.96 * sd_filt
+```
+
+> 3.  Finally, plot the data together with the ltering state estimates and their 0.95 credible intervals.
+
+```{r}
+df_nile <- data.frame(
+  Year      = as.numeric(time(Nile)),  # built-in time indexing for 'Nile'
+  Flow      = as.numeric(Nile),
+  m_filt    = m_filt,
+  sd_filt   = sd_filt,
+  upper_95  = upper_95,
+  lower_95  = lower_95
+)
+
+ggplot(df_nile, aes(x = Year)) +
+  geom_line(aes(y = Flow), color = "orange", size = 1) + # Original data (gray line)
+  geom_line(aes(y = m_filt), color = "steelblue", size = 1) + # Filtered estimates (blue line)
+  geom_ribbon(aes(ymin = lower_95, ymax = upper_95), # 95% credibility interval around the filtered estimates
+              fill = "steelblue", alpha = 0.2) +
+  labs(
+    title = "Local-Level Model Filtering on Nile Data",
+    subtitle = "Kalman Filter Estimates with 95% Credible Intervals",
+    x = "Year",
+    y = "Annual Flow"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
 
 ## Step 2: Online forecasting
 
-1.  Compute the one-step ahead forecasts
+> 1.  Compute the one-step ahead forecasts
 
-2.  Plot the data, together the one-step-ahead forecasts and their 0.95 credible intervals
+> 2.  Plot the data, together the one-step-ahead forecasts and their 0.95 credible intervals
 
 ## Step 3: Signal-to-noise Ratio
 
+> What is the eect of the signal-to-noise ratio (i.e. the ratio $W/V$) on the forecasts? Repeat the exercise with dierent choices of V (observation variance) and W (evolution variance) and comment briey.
+
 ## Step 4: Smoothing
+
+> So far, for computations, we pretended that the data arrived sequentially. Now consider $(y_1, \ldots,y_T)$ and provide and plot the smoothing estimate of the Nile level $\theta_t$ at time t = 28 together with its 95% credible interval.
