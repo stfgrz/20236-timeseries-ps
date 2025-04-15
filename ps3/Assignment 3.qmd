@@ -229,7 +229,7 @@ deseasoned_df <- data.frame(
 deseasoned_df <- na.omit(deseasoned_df)
 
 # Fit HMM with 2 states and a state-dependent linear trend
-n_states <- 2  # Try 3 as well to compare
+n_states <- 3  # Try 3 as well to compare
 
 set.seed(123)  # For reproducibility
 
