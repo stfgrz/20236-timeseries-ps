@@ -99,61 +99,37 @@ ggplot(nile_df, aes(x = Y, y = Flow)) +
 > 1.  Compute the filtering estimates
 
 ```{r}
-T <- length(y)
+dlm_s1 <- dlm(m0 = 1000, C0 = 1000, FF = 1, V = 15100, GG = 1, W = 1470)
 
-# First of all, store the values for the variances
-V <- 15100
-W <- 1470
-
-# To initialise the filters
-m0 <- 1200    # initial mean
-P0 <- 1000    # initial variance
-m_filt <- numeric(T)   # will store E(theta_t | y_{1:t})
-P_filt <- numeric(T)   # will store Var(theta_t | y_{1:t})
-
-# We'll keep temporary variables for the one-step-ahead predictions
-m_pred <- m0
-P_pred <- P0
-
-for(t in 1:T){
-  # -- Update Step
-    # Kalman gain
-  K_t <- P_pred / (P_pred + V)
-  
-  # Filtered estimates, given observation y[t]
-  m_filt[t] <- m_pred + K_t * (y[t] - m_pred)
-  P_filt[t] <- (1 - K_t) * P_pred
-  
-  # -- Predict Step
-    # The next time step's prior (one-step-ahead prediction)
-  m_pred <- m_filt[t]
-  P_pred <- P_filt[t] + W
-}
+filtered_s1 <- dlmFilter(Nile, dlm_s1)
+m_filtered_s1 <- dropFirst(filtered_s1$m)
 ```
 
 > 2.  Compute the corresponding standard deviations and plot them. Comment briefly.
 
 ```{r}
-sd_filt <- sqrt(P_filt)
-upper_95 <- m_filt + 1.96 * sd_filt
-lower_95 <- m_filt - 1.96 * sd_filt
+Ct_list <- dlmSvd2var(filtered_s1$U.C, filtered_s1$D.C)
+sd_filtered_s1 <- sqrt(unlist(Ct_list))[-1]
+
+upper_95 <- m_filtered_s1 + 1.96 * sd_filtered_s1
+lower_95 <- m_filtered_s1 - 1.96 * sd_filtered_s1
 ```
 
 > 3.  Finally, plot the data together with the ltering state estimates and their 0.95 credible intervals.
 
 ```{r}
 df_nile <- data.frame(
-  Year      = as.numeric(time(Nile)),  # built-in time indexing for 'Nile'
+  Year      = as.numeric(time(Nile)),  
   Flow      = as.numeric(Nile),
-  m_filt    = m_filt,
-  sd_filt   = sd_filt,
+  m_filt    = m_filtered_s1,
+  sd_filt   = sd_filtered_s1,
   upper_95  = upper_95,
   lower_95  = lower_95
 )
 
 ggplot(df_nile, aes(x = Year)) +
   geom_line(aes(y = Flow), color = "orange", size = 1) + # Original data (gray line)
-  geom_line(aes(y = m_filt), color = "steelblue", size = 1) + # Filtered estimates (blue line)
+  geom_line(aes(y = m_filtered_s1), color = "steelblue", size = 1) + # Filtered estimates (blue line)
   geom_ribbon(aes(ymin = lower_95, ymax = upper_95), # 95% credibility interval around the filtered estimates
               fill = "steelblue", alpha = 0.2) +
   labs(
@@ -174,12 +150,160 @@ ggplot(df_nile, aes(x = Year)) +
 
 > 1.  Compute the one-step ahead forecasts
 
+```{r}
+forecast_means <- dropFirst(filtered_s1$a)  # one-step ahead forecast means
+
+forecast_var <- dlmSvd2var(filtered_s1$U.R, filtered_s1$D.R)
+forecast_sd <- sqrt(unlist(forecast_var))[-1]
+```
+
+```{r}
+upper_forecast <- forecast_means + 1.96 * forecast_sd
+lower_forecast <- forecast_means - 1.96 * forecast_sd
+```
+
 > 2.  Plot the data, together the one-step-ahead forecasts and their 0.95 credible intervals
+
+```{r}
+df_forecast <- data.frame(
+  Year      = as.numeric(time(Nile))[-1], 
+  Flow      = as.numeric(Nile)[-1],
+  Forecast  = forecast_means,
+  sd_Forecast = forecast_sd,
+  Lower_95 = lower_forecast,
+  Upper_95 = upper_forecast
+)
+
+# Plot the one-step forecasts and the corresponding 95% credible intervals.
+ggplot(df_forecast, aes(x = Year)) +
+  geom_line(aes(y = Flow), color = "orange", size = 1) +
+  geom_line(aes(y = Forecast), color = "darkgreen", size = 1) +
+  geom_ribbon(aes(ymin = Lower_95, ymax = Upper_95), fill = "darkgreen", alpha = 0.2) +
+  labs(
+    title = "One-step Ahead Forecasts on Nile Data",
+    subtitle = "Forecasts derived from the local-level (random walk plus noise) model",
+    x = "Year",
+    y = "Annual Flow"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
 
 ## Step 3: Signal-to-noise Ratio
 
 > What is the eect of the signal-to-noise ratio (i.e. the ratio $W/V$) on the forecasts? Repeat the exercise with dierent choices of V (observation variance) and W (evolution variance) and comment briey.
 
+```{r}
+
+scenarios <- data.frame(
+  Scenario = c("Low ratio (W/V = 0.097)", "Unit ratio (W/V = 1)", "High ratio (W/V ≈ 10.3)"),
+  V = c(15100, 15100, 1470),
+  W = c(1470, 15100, 15100)
+)
+
+forecast_list <- list()
+
+for(i in 1:nrow(scenarios)) {
+  V_val <- scenarios$V[i]
+  W_val <- scenarios$W[i]
+  scenario_name <- scenarios$Scenario[i]
+  
+  dlm_model <- dlm(m0 = 1000, C0 = 1000, FF = 1, V = V_val, GG = 1, W = W_val)
+  filter_mod <- dlmFilter(Nile, dlm_model)
+  
+  # Compute one-step forecasts
+  f_mean <- dropFirst(filter_mod$a)
+  f_var <- dlmSvd2var(filter_mod$U.R, filter_mod$D.R)
+  f_sd <- forecast_sd <- sqrt(unlist(f_var))[-1]
+  
+  scenario_df <- data.frame(
+    Year = as.numeric(time(Nile))[-1],
+    Flow = as.numeric(Nile)[-1],
+    Forecast = f_mean,
+    sd_Forecast = f_sd,
+    Lower_95 = f_mean - 1.96 * f_sd,
+    Upper_95 = f_mean + 1.96 * f_sd,
+    Scenario = scenario_name
+  )
+  
+  forecast_list[[i]] <- scenario_df
+}
+```
+
+```{r}
+df_forecast_all <- bind_rows(forecast_list)
+
+ggplot(df_forecast_all, aes(x = Year)) +
+  geom_line(aes(y = Flow), color = "orange", size = 0.5) +
+  geom_line(aes(y = Forecast), color = "steelblue", size = 0.5) +
+  geom_ribbon(aes(ymin = Lower_95, ymax = Upper_95), fill = "steelblue", alpha = 0.2) +
+  facet_wrap(~ Scenario) +
+  labs(
+    title = "One-step Ahead Forecasts under Different Signal-to-Noise Ratios",
+    subtitle = "Effect of varying W/V on forecasts",
+    x = "Year",
+    y = "Annual Flow"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+
 ## Step 4: Smoothing
 
 > So far, for computations, we pretended that the data arrived sequentially. Now consider $(y_1, \ldots,y_T)$ and provide and plot the smoothing estimate of the Nile level $\theta_t$ at time t = 28 together with its 95% credible interval.
+
+```{r}
+smoothed <- dlmSmooth(Nile, dlm_s1)
+
+theta_smoothed <- dropFirst(smoothed$s)
+
+Ct_smooth_list <- dlmSvd2var(smoothed$U.S, smoothed$D.S)
+
+var_smoothed <- unlist(Ct_smooth_list)[-1]
+sd_smoothed <- sqrt(var_smoothed)
+
+theta_t28 <- theta_smoothed[28]
+sd_t28 <- sd_smoothed[28]
+upper_t28 <- theta_t28 + 1.96 * sd_t28
+lower_t28 <- theta_t28 - 1.96 * sd_t28
+
+df_smooth <- data.frame(
+  Year = as.numeric(time(Nile)),
+  Flow = as.numeric(Nile),
+  Smoothed = theta_smoothed,
+  Lower_95 = theta_smoothed - 1.96 * sd_smoothed,
+  Upper_95 = theta_smoothed + 1.96 * sd_smoothed
+)
+```
+
+```{r}
+year_t28 <- as.numeric(time(Nile))[28]
+
+ggplot() +
+  geom_line(data = df_smooth, aes(x = Year, y = Flow), color = "orange", size = 0.5) +
+  geom_line(data = df_smooth, aes(x = Year, y = Smoothed), color = "steelblue", size = 0.5) +
+  geom_ribbon(data = df_smooth, aes(x = Year, ymin = Lower_95, ymax = Upper_95), fill = "steelblue", alpha = 0.2) +
+  # Highlight the smoothed estimate at t = 28 with error bars.
+  geom_point(data = df_smooth %>% filter(Year == year_t28), aes(x = Year, y = Smoothed), color = "firebrick", size = 1.2) +
+  geom_errorbar(data = df_smooth %>% filter(Year == year_t28), aes(x = Year, ymin = Lower_95, ymax = Upper_95), color = "firebrick", width = 0.5) +
+  labs(
+    title = "Smoothing Estimate for Nile River at t = 28",
+    subtitle = paste0("Year ", year_t28, ": Smoothed level with 95% credible interval"),
+    x = "Year",
+    y = "Latent Level"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+
