@@ -234,13 +234,15 @@ for(i in 1:nrow(scenarios)) {
 ```
 
 ```{r}
+#| fig-width: 12
+#| fig-height: 12
 df_forecast_all <- bind_rows(forecast_list)
 
 ggplot(df_forecast_all, aes(x = Year)) +
   geom_line(aes(y = Flow), color = "orange", size = 0.5) +
   geom_line(aes(y = Forecast), color = "steelblue", size = 0.5) +
   geom_ribbon(aes(ymin = Lower_95, ymax = Upper_95), fill = "steelblue", alpha = 0.2) +
-  facet_wrap(~ Scenario) +
+  facet_wrap(~ Scenario, ncol = 1) +
   labs(
     title = "One-step Ahead Forecasts under Different Signal-to-Noise Ratios",
     subtitle = "Effect of varying W/V on forecasts",
@@ -284,6 +286,7 @@ df_smooth <- data.frame(
 ```
 
 ```{r}
+#| fig-width: 12
 year_t28 <- as.numeric(time(Nile))[28]
 
 ggplot() +

@@ -1,0 +1,54 @@
+---
+title: "20236_FinalProject"
+author: "Stefano Graziosi, Gabriele Molè, Laura Lo Schiavo, Giovanni Carron"
+format: pdf
+editor: visual
+---
+
+# Description of the problem
+
+This project explores both short and long term climatological patterns using data from the Global Historical Climatology Network (GHCN) database. The GHCN database represents one of the most comprehensive and reliable sources of historical climate and weather data, making it particularly valuable for studying temporal patterns.
+
+A fundamental distinction in atmospheric science lies between weather and climate analysis. Weather refers to short-term variations in temperature, precipitation, and other meteorologi- cal variables. These short-term fluctuations can be highly variable and are typically studied for day-to-day (or week-to-week) forecasting. Climate, in contrast, represents the long-term patterns and averages of these weather conditions, usually analyzed over periods of decades. We display in Figure 1 and Figure 2 two examples of climate and weather data, respectively.
+
+Through this project you will investigate both phenomena exploiting different statistical methods you will learn during the course. For instance, some of the questions you will be asked to answer are:
+
+1.  Can we identify any long-term trends in temperature data?
+
+2.  Can we exploit recent data to forecast temperature of the following temporal steps?
+
+While for weather purposes you can directly work with raw data from the GHCN archive, in order to extract some long term information it is better to analyze aggregated data. In fact, some pre–processing steps stress macro–behaviors by smoothing out some short-term variations. In this direction, one of the most reliable and influential sources is GISTEMP (GISS Surface Temperature Analysis) a product of the NASA Goddard Institute for Space Studies which merges some data gathered from GHCN meteorological stations with some ocean related data from ERSST stations.
+
+# Explanatory analysis of climate data
+
+## Data
+
+As a first step, you will focus on the temperature data coming from GISTEMP. The series provided represents changes in the global surface temperature over time. It is derived from a global network of land and ship weather stations, which track daily surface temperatures. Measurements are then adjusted for urban heat effects and other biases, aggregated monthly and averaged across stations. Lastly, since the quantity of interest is the variation of the global surface temperature, the final measurements are adjusted by subtracting the average global surface temperature over the period 1951-1980, which serves as a reference value.
+
+The data set provides a reliable long-term record of temperature anomalies, offering valuable information on climate trends and variability.
+
+The data is provided in a csv file named gistemp.txt. Each row refers to a calendar year (starting from 1880, up to 2024) and contains the following variables.
+
+-   **1st column**: calendar year;
+-   **2nd to 13th**: monthly temperature difference with respect to reference period;
+-   **14th to 15th**: annual average of temperature difference taken as Jan-to-Dec (`J-D`) or Dec-to-Nov (`D-N`)
+-   **16th to 19th**: seasonal average for winter (`DJF`), spring (`MAM`), summer (`JJA`) and autumn (`SON`).
+
+You will need to extract the relevant variable (the monthly data) and convert it to a properly formatted ts object.
+
+## Task
+
+Perform an exploratory analysis to answer the following questions, supporting your answers with valid analysis when necessary (at your discretion).
+
+-   What long-term trends are visible in the temperature data? Are there periods of acceleration or deceleration in warming?
+-   Can you describe the seasonal pattern and provide an interpretation?
+-   Is the seasonality constant over time?
+-   Using only exploratory tools, can you predict the climate evolution? You can pretend to be in 2019 and do 5–steps ahead prediction or provide recursive 1–step ahead forecasts. Can you also provide an assessment of the uncertainty of these predictions? If so, how? If not, why not?
+
+# Groupwork
+
+# 1 Descriptive Statistics
+
+## 1.1 Long-term Trends
+
+## 1.2 Acceleration and Deceleration
