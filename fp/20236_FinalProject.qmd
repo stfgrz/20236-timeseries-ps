@@ -47,8 +47,33 @@ Perform an exploratory analysis to answer the following questions, supporting yo
 
 # Groupwork
 
-# 1 Descriptive Statistics
+# 1 Exploratory Data Analysis
 
-## 1.1 Long-term Trends
+## 1.1 Descriptive statistics
 
-## 1.2 Acceleration and Deceleration
+### 1.1.1 Long-term Trends
+
+> What long-term trends are visible in the temperature data?
+
+### 1.1.2 Acceleration and Deceleration
+
+> Are there periods of acceleration or deceleration in warming?
+
+## 1.2 Seasonality
+
+### 1.2.1 Seasonal pattern
+
+> Can you describe the seasonal pattern and provide an interpretation?
+
+### 1.2.2 Evolution of seasonality
+
+> Is the seasonality constant over time?
+
+## 1.3 Exploratory Forecasts
+
+### 1.3.1 5-steps ahead predictions
+
+### 1.3.2 Recursive 1-step ahead forecasts
+
+### 1.3.3 Forecast evaluation
+
