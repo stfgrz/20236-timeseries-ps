@@ -321,10 +321,6 @@ cat(sprintf("Estimated σ² = %.5f\nEstimated τ² = %.5f\nRatio τ²/σ² = %.3
             sigma2_hat, tau2_hat, ratio))
 ```
 
-### 1.d
-
-> Address: Is this class of models more suitable than HMM for the task at hand?
-
 ## 2. Locally Linear Trend Model
 
 This extension allows both the level and slope to change gradually:
@@ -392,6 +388,6 @@ grid.arrange(p1, p2, nrow=2)
 
 > Evaluate the models prediction based on their interpretability and quality.
 
-### 2.d
+## 3. Comparison with HMM
 
-> Address: Is this class of models more suitable than HMM for the task at hand?
+> Is this class of models more suitable than HMM for the task at hand?
