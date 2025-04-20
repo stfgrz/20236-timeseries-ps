@@ -74,7 +74,6 @@ nile_df <- data.frame(
 )
 ```
 
-
 ```{r}
 ggplot(nile_df, aes(x = Y, y = Flow)) +
   geom_line(color = "orange", size = 1) +     # Draw the line for the time series
@@ -92,7 +91,6 @@ ggplot(nile_df, aes(x = Y, y = Flow)) +
     axis.text = element_text(color = "black")
   )
 ```
-
 
 ## Step 1: Filtering
 
@@ -144,7 +142,6 @@ ggplot(df_nile, aes(x = Year)) +
     plot.subtitle = element_text(size = 12, face = "italic")
   )
 ```
-
 
 ## Step 2: Online forecasting
 
@@ -240,8 +237,8 @@ df_forecast_all <- bind_rows(forecast_list)
 
 ggplot(df_forecast_all, aes(x = Year)) +
   geom_line(aes(y = Flow), color = "orange", size = 0.5) +
-  geom_line(aes(y = Forecast), color = "steelblue", size = 0.5) +
-  geom_ribbon(aes(ymin = Lower_95, ymax = Upper_95), fill = "steelblue", alpha = 0.2) +
+  geom_line(aes(y = Forecast), color = "darkgreen", size = 0.5) +
+  geom_ribbon(aes(ymin = Lower_95, ymax = Upper_95), fill = "darkgreen", alpha = 0.2) +
   facet_wrap(~ Scenario, ncol = 1) +
   labs(
     title = "One-step Ahead Forecasts under Different Signal-to-Noise Ratios",
@@ -255,7 +252,6 @@ ggplot(df_forecast_all, aes(x = Year)) +
     plot.subtitle = element_text(size = 12, face = "italic")
   )
 ```
-
 
 ## Step 4: Smoothing
 
@@ -308,5 +304,3 @@ ggplot() +
     plot.subtitle = element_text(size = 12, face = "italic")
   )
 ```
-
-

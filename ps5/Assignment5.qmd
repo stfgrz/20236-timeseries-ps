@@ -1,0 +1,397 @@
+---
+title: "Assignment 5 | Dynamic Linear Models with R"
+author: "Stefano Graziosi"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: Load the relevant libraries
+library(dlm)
+library(forecast)
+
+library(ggplot2)
+library(ggfortify)
+
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+```
+
+
+```{r echo = "FALSE"}
+#| label: Other relevant libraries (I leave them here for reference)
+
+# Time series
+library(dlm)
+library(TSstudio)
+library(feasts)
+library(tseries)
+  # Necessary packages for quantmod
+  library(zoo)
+  library(xts)
+library(quantmod)
+
+#Specifically for Assignment 2
+library(depmixS4)
+library(HiddenMarkov)
+
+# Datasets
+library(readr)
+library(fpp3)
+
+# For fancy plots
+library(ggthemes)
+  # Necessary packages for viridis
+  library(viridisLite)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
+library(gridExtra)
+
+# Packages related to tidyverse, for data manipulation
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+
+# To handle time changes
+library(timechange)
+
+
+# To solve conflicts
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+```
+
+**Research question**
+
+In this task, we return to the GISTEMP dataset. Your objective, as in the previous assignment, is to uncover the underlying temperature trend over time. This time using state-space methods.
+
+**Implementation**
+
+To begin, prepare the dataset by removing the seasonal component to isolate the long-term behavior. For the Seasonal DLM, you will use the full dataset (with seasonality).
+
+```{r}
+#| label: Load data
+data <- read.csv("gistemp.txt", header = TRUE) 
+monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
+ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
+```
+
+```{r}
+#| label: Removing seasonality from the ts object
+
+# Decompose with STL (periodic seasonal)
+stl_fit <- stl(ts_data, s.window = "periodic")
+
+# Extract seasonal component
+seasonal <- stl_fit$time.series[, "seasonal"]
+
+# Deseasonalized series
+ts_deseasonalized <- ts_data - seasonal
+```
+
+```{r}
+df <- data.frame(
+  date  = as.yearmon(time(ts_data)), 
+  orig  = as.numeric(ts_data),
+  deseason = as.numeric(ts_deseasonalized)
+)
+
+ggplot(df, aes(x=date)) +
+  geom_line(aes(y=orig, color="Original"), linewidth = 1) +
+  geom_line(aes(y=deseason, color="Deseasonalized"), linewidth = 0.5) +
+  scale_color_manual(NULL, 
+                     values=c("Original"="firebrick","Deseasonalized"="steelblue")) +
+  labs(title="GISTEMP time series",
+       subtitle = "Raw vs deseasonalized data",
+       y="Temp anomaly") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+```
+
+# Dynamic Linear Models (DLMs)
+
+## 1. Random Walk plus Noise
+
+This model assumes the observed temperature series $Y_t$ follows a latent process µt, which evolves slowly over time:
+
+$$
+Y_t = \mu_t + \epsilon_t \quad \quad \epsilon_t \sim \mathcal{N}(0,\sigma^2)
+$$
+
+$$
+\mu_t = \mu_{t-1} + \eta_t \quad \quad \eta_t \sim \mathcal{N}(0,\tau^2)
+$$
+
+### 1.a
+
+> Fit the model to the full time series.
+
+```{r}
+#| label: build-rw
+# 1.1 Build function: parameters on log‐scale for stability
+build_rw <- function(par) {
+  # par = c(log(obsVar), log(stateVar))
+  dlmModPoly(order=1,
+             dV = exp(par[1]),
+             dW = exp(par[2]))
+}
+
+# 1.2 Initial guesses
+init_par <- log(c(var(ts_deseasonalized)*0.5,   # guess obs variance
+                  var(ts_deseasonalized)*0.1))  # guess state variance
+
+# 1.3 Maximum‐likelihood estimation
+fit_rw <- dlmMLE(ts_deseasonalized, parm=init_par, build=build_rw)
+
+if(fit_rw$convergence != 0) stop("MLE did not converge")
+
+# 1.4 Retrieve the fitted model
+mod_rw <- build_rw(fit_rw$par)
+
+# Display estimates on original scale:
+sigma2_hat <- exp(fit_rw$par[1])
+tau2_hat   <- exp(fit_rw$par[2])
+cat("Estimated σ² =", round(sigma2_hat,5),
+    "   Estimated τ² =", round(tau2_hat,5), "\n")
+```
+
+### 1.b
+
+> Extract the latent components (level, trend, seasonality) using smoothing techniques.
+
+#### (i) Smoothed level $\mu_t$
+
+```{r}
+#| label: Smoothed level
+sm_rw <- dlmSmooth(ts_deseasonalized, mod_rw)
+
+# sm_rw$s is a Tx1 matrix (including the initial prior)
+# dropFirst() aligns states with data
+mu_smooth <- dropFirst(sm_rw$s)
+```
+
+```{r}
+df_rw <- data.frame(
+  date      = as.yearmon(time(ts_deseasonalized)), 
+  deseason  = as.numeric(ts_deseasonalized),
+  smooth    = as.numeric(mu_smooth)
+)
+
+# Plot both series
+ggplot(df_rw, aes(x = date)) +
+  geom_line(aes(y = deseason, color = "Deseasonalized")) +
+  geom_line(aes(y = smooth,   color = "Smoothed level"), linewidth = 0.5) +
+  scale_color_manual("", 
+    values = c("Deseasonalized" = "firebrick", "Smoothed level" = "steelblue")
+  ) +
+  labs(
+    title = "Random Walk + Noise",
+    subtitle = "Smoothed level",
+    y     = "Temperature anomaly"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+```
+
+
+#### (ii) Implied trend
+
+```{r}
+#| label: Implied trend
+trend_imp <- diff(mu_smooth)
+```
+
+```{r}
+df_trend <- data.frame(
+  date  = as.yearmon(time(trend_imp)),
+  trend = as.numeric(trend_imp)
+)
+
+# Plot
+ggplot(df_trend, aes(x = date, y = trend)) +
+  geom_line(color = "orange", linewidth = 0.25) +
+  labs(
+    title = "Implied trend",
+    subtitle = "Evolution of Δμ_t over time",
+    y     = "°C per month",
+    x     = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+```
+
+
+### 1.c
+
+> Evaluate the models prediction based on their interpretability and quality.
+
+#### (i) One‑step‑ahead residuals
+
+```{r}
+# get the raw residuals and drop the initial NA
+filt_rw <- dlmFilter(ts_deseasonalized, mod_rw)
+resid_tot_rw    <- residuals(filt_rw, type="raw")
+resid_rw <- as.numeric(resid_tot_rw$res)
+
+# Compute the ACF object 
+acf_obj <- acf(resid_rw, lag.max = 36, plot = FALSE)
+
+# Plot the ACF
+autoplot(acf_obj) +
+  labs(
+    title = "ACF of one-step residuals",
+    x = "Lag",
+    y = "ACF") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+```
+
+```{r}
+Box.test(resid_rw, lag = 12, type = "Ljung-Box", fitdf = 0)
+```
+#### (ii) In‑sample RMSE
+
+```{r}
+rmse_rw <- sqrt(mean(resid_rw^2, na.rm=TRUE))
+cat("In-sample RMSE =", round(rmse_rw,4), "\n")
+```
+
+#### (iii) 
+
+```{r}
+df_r <- data.frame(resid = resid_rw)
+
+# (a) Histogram + normal curve
+p_hist <- ggplot(df_r, aes(x = resid)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 30,
+                 color = "steelblue",
+                 fill  = "lightblue") +
+  stat_function(fun = dnorm,
+                args = list(mean = mean(df_r$resid, na.rm=TRUE),
+                            sd   = sd(df_r$resid, na.rm=TRUE))) +
+  labs(title = "Distribution of 1-step residuals",
+       subtitle = "Data obtained from the residuals of the random walk process",
+       x = "Residual",
+       y = "Density") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+
+# (b) QQ‑plot
+p_qq <- ggplot(df_r, aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "QQ-plot of 1-step residuals",
+       subtitle = "Data obtained from the residuals of the random walk process",
+       x = "Theoretical quantiles",
+       y = "Sample residuals") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+  )
+
+# put them side by side
+grid.arrange(p_hist, p_qq, ncol = 1)
+```
+
+```{r}
+# Check sigma^2 vs. tau^2 stability
+sigma2_hat <- exp(fit_rw$par[1])
+tau2_hat   <- exp(fit_rw$par[2])
+ratio      <- tau2_hat / sigma2_hat
+
+cat(sprintf("Estimated σ² = %.5f\nEstimated τ² = %.5f\nRatio τ²/σ² = %.3f\n",
+            sigma2_hat, tau2_hat, ratio))
+```
+
+### 1.d
+
+> Address: Is this class of models more suitable than HMM for the task at hand?
+
+## 2. Locally Linear Trend Model
+
+This extension allows both the level and slope to change gradually:
+
+$$
+Y_t = \mu_t + \epsilon_t \quad \quad \epsilon_t \sim \mathcal{N}(0,\sigma^2)
+$$ 
+$$
+\mu_t = \mu_{t-1} + \beta_{t-1} + \eta_t \quad \quad \eta_t \sim \mathcal{N}(0,\tau^2)
+$$
+$$
+\beta_t = \beta_{t-1} + \zeta_t \quad \quad \zeta_t \sim \mathcal{N}(0, \gamma^2)
+$$
+
+### 2.a
+
+> Fit each model to the full time series.
+
+```{r}
+#| label: build-llt
+build_llt <- function(par) {
+  # par = c(log(obsVar), log(levelVar), log(slopeVar))
+  dlmModPoly(order = 2,
+             dV = exp(par[1]),
+             dW = c(exp(par[2]), exp(par[3])))
+}
+
+init_llt <- log(c(var(ts_deseasonalized)*0.5,
+                  var(ts_deseasonalized)*0.1,
+                  var(ts_deseasonalized)*0.1))
+
+fit_llt  <- dlmMLE(ts_deseasonalized, parm = init_llt, build = build_llt)
+mod_llt  <- build_llt(fit_llt$par)
+
+# smoothing
+sm_llt    <- dlmSmooth(ts_deseasonalized, mod_llt)
+level_llt <- dropFirst(sm_llt$s)[,1]
+slope_llt <- dropFirst(sm_llt$s)[,2]
+
+# residuals & RMSE
+f_llt <- dlmFilter(ts_deseasonalized, mod_llt)
+e_llt <- residuals(f_llt, type="raw")
+rmse_llt <- sqrt(mean(e_llt^2, na.rm=TRUE))
+
+# plots
+p1 <- autoplot(ts_deseasonalized) +
+  autolayer(level_llt, color="darkgreen", size=1) +
+  labs(title=sprintf("LLT: level (RMSE=%.3f)", rmse_llt),
+       y="Deseasonalized anomaly") +
+  theme_minimal()
+
+p2 <- autoplot(slope_llt) +
+  labs(title="LLT: slope (°C per month)", y="Slope") +
+  theme_minimal()
+
+grid.arrange(p1, p2, nrow=2)
+
+```
+
+### 2.b
+
+> Extract the latent components (level, trend, seasonality) using smoothing techniques.
+
+### 2.c
+
+> Evaluate the models prediction based on their interpretability and quality.
+
+### 2.d
+
+> Address: Is this class of models more suitable than HMM for the task at hand?
