@@ -15,6 +15,9 @@ library(ggfortify)
 
 library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
 library(tinytex)
+
+library(modeltime)
+library(timetk)
 ```
 
 
