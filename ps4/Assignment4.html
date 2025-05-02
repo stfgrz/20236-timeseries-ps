@@ -199,7 +199,7 @@ Attaching package: 'nlme'</code></pre>
 <pre><code>── Attaching packages ──────────────────────────────────────────── fpp3 1.0.1 ──</code></pre>
 </div>
 <div class="cell-output cell-output-stderr">
-<pre><code>✔ tibble      3.2.1     ✔ ggplot2     3.5.1
+<pre><code>✔ tibble      3.2.1     ✔ ggplot2     3.5.2
 ✔ dplyr       1.1.4     ✔ tsibble     1.1.6
 ✔ tidyr       1.3.1     ✔ tsibbledata 0.4.1
 ✔ lubridate   1.9.4     ✔ fable       0.4.1</code></pre>
@@ -253,7 +253,7 @@ Attaching package: 'magrittr'</code></pre>
 <div class="cell-output cell-output-stderr">
 <pre><code>── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
 ✔ forcats 1.0.0     ✔ stringr 1.5.1
-✔ purrr   1.0.2     </code></pre>
+✔ purrr   1.0.4     </code></pre>
 </div>
 <div class="cell-output cell-output-stderr">
 <pre><code>── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
@@ -283,8 +283,8 @@ Attaching package: 'magrittr'</code></pre>
 <pre><code>[conflicted] Will prefer dplyr::filter over any other package.</code></pre>
 </div>
 </div>
-<section id="kalman-lter-for-the-random-walk-plus-noise-model" class="level1">
-<h1>Kalman lter for the random walk plus noise model</h1>
+<section id="kalman-filter-for-the-random-walk-plus-noise-model" class="level1">
+<h1>Kalman filter for the random walk plus noise model</h1>
 <p>Consider the Nile data (measurements of the annual ow of the river Nile at Ashwan 1871-1970), available in R (<code>&gt; ?Nile</code>).</p>
 <p>First, plot the data. The series clearly appears non-stationary, presenting a quite evident change point. A local level model, i.e.&nbsp;a random walk plus noise, may be used to capture the main change point and other minor changes in the level of the Nile river. Let us consider the following random walk plus noise model.</p>
 <p><span class="math display">\[
@@ -498,9 +498,9 @@ y_t &amp; = \theta_t + v_t \quad \quad v_t \sim \mathcal{N}(0,V) \\
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_forecast_all, <span class="fu">aes</span>(<span class="at">x =</span> Year)) <span class="sc">+</span></span>
 <span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> Flow), <span class="at">color =</span> <span class="st">"orange"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> Forecast), <span class="at">color =</span> <span class="st">"steelblue"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">fill =</span> <span class="st">"steelblue"</span>, <span class="at">alpha =</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
-<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> Scenario) <span class="sc">+</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> Forecast), <span class="at">color =</span> <span class="st">"darkgreen"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">fill =</span> <span class="st">"darkgreen"</span>, <span class="at">alpha =</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> Scenario, <span class="at">ncol =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
 <span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
 <span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"One-step Ahead Forecasts under Different Signal-to-Noise Ratios"</span>,</span>
 <span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"Effect of varying W/V on forecasts"</span>,</span>
@@ -515,67 +515,231 @@ y_t &amp; = \theta_t + v_t \quad \quad v_t \sim \mathcal{N}(0,V) \\
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="Assignment4_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="Assignment4_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="1152"></p>
+</figure>
+</div>
+</div>
+</div>
+<section id="effect-of-the-signal-to-noise-ratio-on-one-step-forecasts" class="level3">
+<h3 class="anchored" data-anchor-id="effect-of-the-signal-to-noise-ratio-on-one-step-forecasts">Effect of the Signal-to-Noise Ratio on One-Step Forecasts</h3>
+<p>From the three panels above we see:</p>
+<ul>
+<li><p><strong>Low ratio (W/V = 0.097):</strong><br>
+Here the evolution variance W is small relative to the observation noise V. The model “believes” the underlying level moves very slowly and that most of the variation in the data is noise. As a result, the one-step forecasts are very ‘flat’ (they stick close to the previous level) and the 95% intervals are relatively narrow.</p></li>
+<li><p><strong>Unit ratio (W/V = 1):</strong><br>
+When W and V are equal, the model balances changes in the level against observation noise. Forecasts react moderately to recent observations and the uncertainty bands widen at an intermediate rate.</p></li>
+<li><p><strong>High ratio (W/V ≈ 10.3):</strong><br>
+Now the model thinks the level is very volatile (large W) but observations are quite precise (small V). Forecasts jump almost immediately to follow the last observation, and the 95% bands expand quickly because the state is assumed to wander freely.</p></li>
+</ul>
+<p><strong>In practice:</strong><br>
+- A <strong>low</strong> signal-to-noise ratio produces <strong>smooth, stable</strong> forecasts with <strong>narrow</strong> intervals, essentially ignoring small fluctuations as noise.<br>
+- A <strong>high</strong> ratio produces <strong>responsive</strong>, but <strong>uncertain</strong>, forecasts with <strong>wide</strong> intervals, since the level is free to change rapidly.<br>
+- Choosing W/V is therefore a trade-off between <strong>tracking</strong> real shifts in the level and <strong>dampening</strong> transient noise.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>V_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">5000</span>, <span class="dv">15100</span>, <span class="dv">30000</span>)      <span class="co"># try low, baseline, high observation noise</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>W_vals <span class="ot">&lt;-</span> <span class="fu">c</span>( <span class="dv">500</span>,  <span class="dv">1470</span>, <span class="dv">10000</span>)      <span class="co"># and low, baseline, high evolution noise</span></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>scenarios2 <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(<span class="at">V =</span> V_vals, <span class="at">W =</span> W_vals) <span class="sc">%&gt;%</span></span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Scenario =</span> <span class="fu">paste0</span>(<span class="st">"W/V="</span>, <span class="fu">round</span>(W<span class="sc">/</span>V, <span class="dv">2</span>)))</span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>forecast_list2 <span class="ot">&lt;-</span> <span class="fu">lapply</span>(<span class="fu">seq_len</span>(<span class="fu">nrow</span>(scenarios2)), <span class="cf">function</span>(i) {</span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a>  V_val <span class="ot">&lt;-</span> scenarios2<span class="sc">$</span>V[i]</span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>  W_val <span class="ot">&lt;-</span> scenarios2<span class="sc">$</span>W[i]</span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>  scen  <span class="ot">&lt;-</span> scenarios2<span class="sc">$</span>Scenario[i]</span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>  model_i <span class="ot">&lt;-</span> <span class="fu">dlm</span>(<span class="at">m0 =</span> <span class="dv">1000</span>, <span class="at">C0 =</span> <span class="dv">1000</span>, <span class="at">FF =</span> <span class="dv">1</span>, <span class="at">V =</span> V_val, <span class="at">GG =</span> <span class="dv">1</span>, <span class="at">W =</span> W_val)</span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a>  filt_i  <span class="ot">&lt;-</span> <span class="fu">dlmFilter</span>(Nile, model_i)</span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a>  f_mean <span class="ot">&lt;-</span> <span class="fu">dropFirst</span>(filt_i<span class="sc">$</span>a)</span>
+<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a>  f_var  <span class="ot">&lt;-</span> <span class="fu">dlmSvd2var</span>(filt_i<span class="sc">$</span>U.R, filt_i<span class="sc">$</span>D.R)</span>
+<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a>  f_sd   <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">unlist</span>(f_var))[<span class="sc">-</span><span class="dv">1</span>]</span>
+<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-19"><a href="#cb44-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb44-20"><a href="#cb44-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">Year     =</span> <span class="fu">as.numeric</span>(<span class="fu">time</span>(Nile))[<span class="sc">-</span><span class="dv">1</span>],</span>
+<span id="cb44-21"><a href="#cb44-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">Flow     =</span> <span class="fu">as.numeric</span>(Nile)[<span class="sc">-</span><span class="dv">1</span>],</span>
+<span id="cb44-22"><a href="#cb44-22" aria-hidden="true" tabindex="-1"></a>    <span class="at">Forecast =</span> f_mean,</span>
+<span id="cb44-23"><a href="#cb44-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">Lower95  =</span> f_mean <span class="sc">-</span> <span class="fl">1.96</span><span class="sc">*</span>f_sd,</span>
+<span id="cb44-24"><a href="#cb44-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">Upper95  =</span> f_mean <span class="sc">+</span> <span class="fl">1.96</span><span class="sc">*</span>f_sd,</span>
+<span id="cb44-25"><a href="#cb44-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">Scenario =</span> scen</span>
+<span id="cb44-26"><a href="#cb44-26" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb44-27"><a href="#cb44-27" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb44-28"><a href="#cb44-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-29"><a href="#cb44-29" aria-hidden="true" tabindex="-1"></a>df2 <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(forecast_list2)</span>
+<span id="cb44-30"><a href="#cb44-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-31"><a href="#cb44-31" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb44-32"><a href="#cb44-32" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df2, <span class="fu">aes</span>(<span class="at">x =</span> Year)) <span class="sc">+</span></span>
+<span id="cb44-33"><a href="#cb44-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> Flow), <span class="at">color =</span> <span class="st">"orange"</span>,   <span class="at">size =</span> <span class="fl">0.3</span>) <span class="sc">+</span></span>
+<span id="cb44-34"><a href="#cb44-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> Forecast), <span class="at">color =</span> <span class="st">"darkgreen"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb44-35"><a href="#cb44-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> Lower95, <span class="at">ymax =</span> Upper95),</span>
+<span id="cb44-36"><a href="#cb44-36" aria-hidden="true" tabindex="-1"></a>              <span class="at">fill =</span> <span class="st">"darkgreen"</span>, <span class="at">alpha =</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
+<span id="cb44-37"><a href="#cb44-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> Scenario, <span class="at">ncol =</span> <span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb44-38"><a href="#cb44-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb44-39"><a href="#cb44-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">title    =</span> <span class="st">"One-step Forecasts under Different σ²_v and σ²_w"</span>,</span>
+<span id="cb44-40"><a href="#cb44-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"Panels labelled by W/V ratio"</span>,</span>
+<span id="cb44-41"><a href="#cb44-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">x        =</span> <span class="st">"Year"</span>,</span>
+<span id="cb44-42"><a href="#cb44-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">y        =</span> <span class="st">"Annual Flow"</span></span>
+<span id="cb44-43"><a href="#cb44-43" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb44-44"><a href="#cb44-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb44-45"><a href="#cb44-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb44-46"><a href="#cb44-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">strip.text =</span> <span class="fu">element_text</span>(<span class="at">face =</span> <span class="st">"bold"</span>),</span>
+<span id="cb44-47"><a href="#cb44-47" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.title =</span> <span class="fu">element_text</span>(<span class="at">face =</span> <span class="st">"bold"</span>)</span>
+<span id="cb44-48"><a href="#cb44-48" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Assignment4_files/figure-html/unnamed-chunk-12-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>
 </div>
 </section>
-<section id="step-4-smoothing" class="level2">
-<h2 class="anchored" data-anchor-id="step-4-smoothing">Step 4: Smoothing</h2>
+</section>
+<section id="step-4-model-checking" class="level2">
+<h2 class="anchored" data-anchor-id="step-4-model-checking">Step 4: Model Checking</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>std_list <span class="ot">&lt;-</span> <span class="fu">residuals</span>(filtered_s1, <span class="at">sd =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>std_resid <span class="ot">&lt;-</span> std_list<span class="sc">$</span>res</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">2</span>,<span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>,<span class="dv">4</span>,<span class="dv">2</span>,<span class="dv">1</span>))</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a><span class="fu">ts.plot</span>(std_resid, </span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="st">"Standardized 1-step Forecast Errors"</span>, </span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylab =</span> <span class="st">"Residual"</span>, <span class="at">xlab =</span> <span class="st">"Time"</span>)</span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>), <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"lightblue"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Assignment4_files/figure-html/Time‐series%20plot%20of%20standardized%20residuals-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb46"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="fu">acf</span>(std_resid, <span class="at">main =</span> <span class="st">"ACF of Standardized Residuals"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Assignment4_files/figure-html/ACF%20of%20residuals-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb47"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(std_resid, <span class="at">breaks =</span> <span class="dv">12</span>, </span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"Histogram of Standardized Residuals"</span>, </span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="st">"Residuals"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Assignment4_files/figure-html/unnamed-chunk-15-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="sourceCode cell-code" id="cb48"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="fu">qqnorm</span>(std_resid, <span class="at">main =</span> <span class="st">"QQ‐plot of Standardized Residuals"</span>)</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a><span class="fu">qqline</span>(std_resid, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Assignment4_files/figure-html/unnamed-chunk-15-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>lb_test <span class="ot">&lt;-</span> <span class="fu">Box.test</span>(std_resid, <span class="at">type =</span> <span class="st">"Ljung-Box"</span>, <span class="at">lag =</span> <span class="dv">10</span>)</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>sw_test <span class="ot">&lt;-</span> <span class="fu">shapiro.test</span>(<span class="fu">as.numeric</span>(std_resid))</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(lb_test)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+    Box-Ljung test
+
+data:  std_resid
+X-squared = 13.947, df = 10, p-value = 0.1754</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb51"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(sw_test)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+    Shapiro-Wilk normality test
+
+data:  as.numeric(std_resid)
+W = 0.99576, p-value = 0.99</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">1</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="step-5-smoothing" class="level2">
+<h2 class="anchored" data-anchor-id="step-5-smoothing">Step 5: Smoothing</h2>
 <blockquote class="blockquote">
 <p>So far, for computations, we pretended that the data arrived sequentially. Now consider <span class="math inline">\((y_1, \ldots,y_T)\)</span> and provide and plot the smoothing estimate of the Nile level <span class="math inline">\(\theta_t\)</span> at time t = 28 together with its 95% credible interval.</p>
 </blockquote>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>smoothed <span class="ot">&lt;-</span> <span class="fu">dlmSmooth</span>(Nile, dlm_s1)</span>
-<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>theta_smoothed <span class="ot">&lt;-</span> <span class="fu">dropFirst</span>(smoothed<span class="sc">$</span>s)</span>
-<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>Ct_smooth_list <span class="ot">&lt;-</span> <span class="fu">dlmSvd2var</span>(smoothed<span class="sc">$</span>U.S, smoothed<span class="sc">$</span>D.S)</span>
-<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>var_smoothed <span class="ot">&lt;-</span> <span class="fu">unlist</span>(Ct_smooth_list)[<span class="sc">-</span><span class="dv">1</span>]</span>
-<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a>sd_smoothed <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(var_smoothed)</span>
-<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>theta_t28 <span class="ot">&lt;-</span> theta_smoothed[<span class="dv">28</span>]</span>
-<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>sd_t28 <span class="ot">&lt;-</span> sd_smoothed[<span class="dv">28</span>]</span>
-<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>upper_t28 <span class="ot">&lt;-</span> theta_t28 <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_t28</span>
-<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a>lower_t28 <span class="ot">&lt;-</span> theta_t28 <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_t28</span>
-<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a>df_smooth <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">Year =</span> <span class="fu">as.numeric</span>(<span class="fu">time</span>(Nile)),</span>
-<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">Flow =</span> <span class="fu">as.numeric</span>(Nile),</span>
-<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">Smoothed =</span> theta_smoothed,</span>
-<span id="cb44-19"><a href="#cb44-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">Lower_95 =</span> theta_smoothed <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_smoothed,</span>
-<span id="cb44-20"><a href="#cb44-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">Upper_95 =</span> theta_smoothed <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_smoothed</span>
-<span id="cb44-21"><a href="#cb44-21" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb54"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>smoothed <span class="ot">&lt;-</span> <span class="fu">dlmSmooth</span>(Nile, dlm_s1)</span>
+<span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a>theta_smoothed <span class="ot">&lt;-</span> <span class="fu">dropFirst</span>(smoothed<span class="sc">$</span>s)</span>
+<span id="cb54-4"><a href="#cb54-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb54-5"><a href="#cb54-5" aria-hidden="true" tabindex="-1"></a>Ct_smooth_list <span class="ot">&lt;-</span> <span class="fu">dlmSvd2var</span>(smoothed<span class="sc">$</span>U.S, smoothed<span class="sc">$</span>D.S)</span>
+<span id="cb54-6"><a href="#cb54-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb54-7"><a href="#cb54-7" aria-hidden="true" tabindex="-1"></a>var_smoothed <span class="ot">&lt;-</span> <span class="fu">unlist</span>(Ct_smooth_list)[<span class="sc">-</span><span class="dv">1</span>]</span>
+<span id="cb54-8"><a href="#cb54-8" aria-hidden="true" tabindex="-1"></a>sd_smoothed <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(var_smoothed)</span>
+<span id="cb54-9"><a href="#cb54-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb54-10"><a href="#cb54-10" aria-hidden="true" tabindex="-1"></a>theta_t28 <span class="ot">&lt;-</span> theta_smoothed[<span class="dv">28</span>]</span>
+<span id="cb54-11"><a href="#cb54-11" aria-hidden="true" tabindex="-1"></a>sd_t28 <span class="ot">&lt;-</span> sd_smoothed[<span class="dv">28</span>]</span>
+<span id="cb54-12"><a href="#cb54-12" aria-hidden="true" tabindex="-1"></a>upper_t28 <span class="ot">&lt;-</span> theta_t28 <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_t28</span>
+<span id="cb54-13"><a href="#cb54-13" aria-hidden="true" tabindex="-1"></a>lower_t28 <span class="ot">&lt;-</span> theta_t28 <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_t28</span>
+<span id="cb54-14"><a href="#cb54-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb54-15"><a href="#cb54-15" aria-hidden="true" tabindex="-1"></a>df_smooth <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb54-16"><a href="#cb54-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">Year =</span> <span class="fu">as.numeric</span>(<span class="fu">time</span>(Nile)),</span>
+<span id="cb54-17"><a href="#cb54-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">Flow =</span> <span class="fu">as.numeric</span>(Nile),</span>
+<span id="cb54-18"><a href="#cb54-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">Smoothed =</span> theta_smoothed,</span>
+<span id="cb54-19"><a href="#cb54-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">Lower_95 =</span> theta_smoothed <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_smoothed,</span>
+<span id="cb54-20"><a href="#cb54-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">Upper_95 =</span> theta_smoothed <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> sd_smoothed</span>
+<span id="cb54-21"><a href="#cb54-21" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>year_t28 <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">time</span>(Nile))[<span class="dv">28</span>]</span>
-<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Flow), <span class="at">color =</span> <span class="st">"orange"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Smoothed), <span class="at">color =</span> <span class="st">"steelblue"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">fill =</span> <span class="st">"steelblue"</span>, <span class="at">alpha =</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
-<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Highlight the smoothed estimate at t = 28 with error bars.</span></span>
-<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> df_smooth <span class="sc">%&gt;%</span> <span class="fu">filter</span>(Year <span class="sc">==</span> year_t28), <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Smoothed), <span class="at">color =</span> <span class="st">"firebrick"</span>, <span class="at">size =</span> <span class="fl">1.2</span>) <span class="sc">+</span></span>
-<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(<span class="at">data =</span> df_smooth <span class="sc">%&gt;%</span> <span class="fu">filter</span>(Year <span class="sc">==</span> year_t28), <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">color =</span> <span class="st">"firebrick"</span>, <span class="at">width =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
-<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Smoothing Estimate for Nile River at t = 28"</span>,</span>
-<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="fu">paste0</span>(<span class="st">"Year "</span>, year_t28, <span class="st">": Smoothed level with 95% credible interval"</span>),</span>
-<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Year"</span>,</span>
-<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Latent Level"</span></span>
-<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
-<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb45-18"><a href="#cb45-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">16</span>, <span class="at">face =</span> <span class="st">"bold"</span>),</span>
-<span id="cb45-19"><a href="#cb45-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.subtitle =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>, <span class="at">face =</span> <span class="st">"italic"</span>)</span>
-<span id="cb45-20"><a href="#cb45-20" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb55"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>year_t28 <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">time</span>(Nile))[<span class="dv">28</span>]</span>
+<span id="cb55-2"><a href="#cb55-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb55-3"><a href="#cb55-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb55-4"><a href="#cb55-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Flow), <span class="at">color =</span> <span class="st">"orange"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb55-5"><a href="#cb55-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Smoothed), <span class="at">color =</span> <span class="st">"steelblue"</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb55-6"><a href="#cb55-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="at">data =</span> df_smooth, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">fill =</span> <span class="st">"steelblue"</span>, <span class="at">alpha =</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
+<span id="cb55-7"><a href="#cb55-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Highlight the smoothed estimate at t = 28 with error bars.</span></span>
+<span id="cb55-8"><a href="#cb55-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> df_smooth <span class="sc">%&gt;%</span> <span class="fu">filter</span>(Year <span class="sc">==</span> year_t28), <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Smoothed), <span class="at">color =</span> <span class="st">"firebrick"</span>, <span class="at">size =</span> <span class="fl">1.2</span>) <span class="sc">+</span></span>
+<span id="cb55-9"><a href="#cb55-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(<span class="at">data =</span> df_smooth <span class="sc">%&gt;%</span> <span class="fu">filter</span>(Year <span class="sc">==</span> year_t28), <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">ymin =</span> Lower_95, <span class="at">ymax =</span> Upper_95), <span class="at">color =</span> <span class="st">"firebrick"</span>, <span class="at">width =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb55-10"><a href="#cb55-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb55-11"><a href="#cb55-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Smoothing Estimate for Nile River at t = 28"</span>,</span>
+<span id="cb55-12"><a href="#cb55-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="fu">paste0</span>(<span class="st">"Year "</span>, year_t28, <span class="st">": Smoothed level with 95% credible interval"</span>),</span>
+<span id="cb55-13"><a href="#cb55-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Year"</span>,</span>
+<span id="cb55-14"><a href="#cb55-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Latent Level"</span></span>
+<span id="cb55-15"><a href="#cb55-15" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb55-16"><a href="#cb55-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb55-17"><a href="#cb55-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb55-18"><a href="#cb55-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">16</span>, <span class="at">face =</span> <span class="st">"bold"</span>),</span>
+<span id="cb55-19"><a href="#cb55-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.subtitle =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>, <span class="at">face =</span> <span class="st">"italic"</span>)</span>
+<span id="cb55-20"><a href="#cb55-20" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="Assignment4_files/figure-html/unnamed-chunk-13-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="Assignment4_files/figure-html/unnamed-chunk-18-1.png" class="img-fluid figure-img" width="1152"></p>
 </figure>
 </div>
+</div>
+</div>
+</section>
+<section id="step-6-maximum-likelihood-estimators" class="level2">
+<h2 class="anchored" data-anchor-id="step-6-maximum-likelihood-estimators">Step 6: Maximum Likelihood Estimators</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb56"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>mle_fit <span class="ot">&lt;-</span> <span class="fu">StructTS</span>(Nile, <span class="at">type =</span> <span class="st">"level"</span>)</span>
+<span id="cb56-2"><a href="#cb56-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb56-3"><a href="#cb56-3" aria-hidden="true" tabindex="-1"></a>sigma2_w <span class="ot">&lt;-</span> mle_fit<span class="sc">$</span>coef[<span class="st">"level"</span>]    <span class="co"># evolution variance Ŵ</span></span>
+<span id="cb56-4"><a href="#cb56-4" aria-hidden="true" tabindex="-1"></a>sigma2_v <span class="ot">&lt;-</span> mle_fit<span class="sc">$</span>coef[<span class="st">"epsilon"</span>]  <span class="co"># observation variance V̂</span></span>
+<span id="cb56-5"><a href="#cb56-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb56-6"><a href="#cb56-6" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"MLE of evolution variance (σ²_w):"</span>, <span class="fu">round</span>(sigma2_w, <span class="dv">2</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>MLE of evolution variance (σ²_w): 1469.15 </code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb58"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"MLE of observation variance (σ²_v):"</span>, <span class="fu">round</span>(sigma2_v, <span class="dv">2</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>MLE of observation variance (σ²_v): 15098.58 </code></pre>
 </div>
 </div>
 </section>

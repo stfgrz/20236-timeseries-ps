@@ -1,7 +1,7 @@
 ---
 title: "Assignment 4 | Dynamic Linear Models with R"
 author: "Stefano Graziosi"
-format: html
+format: pdf
 editor: visual
 ---
 
@@ -48,7 +48,7 @@ library(conflicted)
 conflicts_prefer(dplyr::filter)
 ```
 
-# Kalman lter for the random walk plus noise model
+# Kalman filter for the random walk plus noise model
 
 Consider the Nile data (measurements of the annual ow of the river Nile at Ashwan 1871-1970), available in R (`> ?Nile`).
 
@@ -253,7 +253,115 @@ ggplot(df_forecast_all, aes(x = Year)) +
   )
 ```
 
-## Step 4: Smoothing
+### Effect of the Signal-to-Noise Ratio on One-Step Forecasts
+
+From the three panels above we see:
+
+- **Low ratio (W/V = 0.097):**  
+  Here the evolution variance W is small relative to the observation noise V.  The model “believes” the underlying level moves very slowly and that most of the variation in the data is noise.  As a result, the one-step forecasts are very ‘flat’ (they stick close to the previous level) and the 95% intervals are relatively narrow.
+
+- **Unit ratio (W/V = 1):**  
+  When W and V are equal, the model balances changes in the level against observation noise.  Forecasts react moderately to recent observations and the uncertainty bands widen at an intermediate rate.
+
+- **High ratio (W/V ≈ 10.3):**  
+  Now the model thinks the level is very volatile (large W) but observations are quite precise (small V).  Forecasts jump almost immediately to follow the last observation, and the 95% bands expand quickly because the state is assumed to wander freely.
+
+**In practice:**  
+- A **low** signal-to-noise ratio produces **smooth, stable** forecasts with **narrow** intervals, essentially ignoring small fluctuations as noise.  
+- A **high** ratio produces **responsive**, but **uncertain**, forecasts with **wide** intervals, since the level is free to change rapidly.  
+- Choosing W/V is therefore a trade-off between **tracking** real shifts in the level and **dampening** transient noise.
+
+```{r}
+V_vals <- c(5000, 15100, 30000)      # try low, baseline, high observation noise
+W_vals <- c( 500,  1470, 10000)      # and low, baseline, high evolution noise
+
+scenarios2 <- expand.grid(V = V_vals, W = W_vals) %>%
+  mutate(Scenario = paste0("W/V=", round(W/V, 2)))
+
+forecast_list2 <- lapply(seq_len(nrow(scenarios2)), function(i) {
+  V_val <- scenarios2$V[i]
+  W_val <- scenarios2$W[i]
+  scen  <- scenarios2$Scenario[i]
+
+  model_i <- dlm(m0 = 1000, C0 = 1000, FF = 1, V = V_val, GG = 1, W = W_val)
+  filt_i  <- dlmFilter(Nile, model_i)
+
+  f_mean <- dropFirst(filt_i$a)
+  f_var  <- dlmSvd2var(filt_i$U.R, filt_i$D.R)
+  f_sd   <- sqrt(unlist(f_var))[-1]
+
+  data.frame(
+    Year     = as.numeric(time(Nile))[-1],
+    Flow     = as.numeric(Nile)[-1],
+    Forecast = f_mean,
+    Lower95  = f_mean - 1.96*f_sd,
+    Upper95  = f_mean + 1.96*f_sd,
+    Scenario = scen
+  )
+})
+
+df2 <- bind_rows(forecast_list2)
+
+library(ggplot2)
+ggplot(df2, aes(x = Year)) +
+  geom_line(aes(y = Flow), color = "orange",   size = 0.3) +
+  geom_line(aes(y = Forecast), color = "darkgreen", size = 0.5) +
+  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
+              fill = "darkgreen", alpha = 0.2) +
+  facet_wrap(~ Scenario, ncol = 3) +
+  labs(
+    title    = "One-step Forecasts under Different σ²_v and σ²_w",
+    subtitle = "Panels labelled by W/V ratio",
+    x        = "Year",
+    y        = "Annual Flow"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+## Step 4: Model Checking
+
+```{r}
+#| label: Time‐series plot of standardized residuals
+
+std_list <- residuals(filtered_s1, sd = TRUE)
+std_resid <- std_list$res
+
+par(mfrow = c(2,2), mar = c(4,4,2,1))
+ts.plot(std_resid, 
+        main = "Standardized 1-step Forecast Errors", 
+        ylab = "Residual", xlab = "Time")
+abline(h = c(-2, 2), lty = 2, col = "lightblue")
+```
+
+```{r}
+#| label: ACF of residuals
+acf(std_resid, main = "ACF of Standardized Residuals")
+```
+
+```{r}
+hist(std_resid, breaks = 12, 
+     main = "Histogram of Standardized Residuals", 
+     xlab = "Residuals")
+qqnorm(std_resid, main = "QQ‐plot of Standardized Residuals")
+qqline(std_resid, col = "steelblue")
+```
+
+```{r}
+lb_test <- Box.test(std_resid, type = "Ljung-Box", lag = 10)
+sw_test <- shapiro.test(as.numeric(std_resid))
+
+print(lb_test)
+print(sw_test)
+
+par(mfrow = c(1,1))
+```
+
+## Step 5: Smoothing
 
 > So far, for computations, we pretended that the data arrived sequentially. Now consider $(y_1, \ldots,y_T)$ and provide and plot the smoothing estimate of the Nile level $\theta_t$ at time t = 28 together with its 95% credible interval.
 
@@ -303,4 +411,16 @@ ggplot() +
     plot.title = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, face = "italic")
   )
+```
+
+## Step 6: Maximum Likelihood Estimators
+
+```{r}
+mle_fit <- StructTS(Nile, type = "level")
+
+sigma2_w <- mle_fit$coef["level"]    # evolution variance Ŵ
+sigma2_v <- mle_fit$coef["epsilon"]  # observation variance V̂
+
+cat("MLE of evolution variance (σ²_w):", round(sigma2_w, 2), "\n")
+cat("MLE of observation variance (σ²_v):", round(sigma2_v, 2), "\n")
 ```
