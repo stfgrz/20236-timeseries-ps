@@ -5,7 +5,7 @@ format: html
 editor: visual
 ---
 
-```{r}
+```{r echo = "FALSE"}
 #| label: Load the relevant libraries
 library(dlm)
 library(forecast)
@@ -15,14 +15,21 @@ library(ggfortify)
 
 library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
 library(tinytex)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
 
 library(modeltime)
 library(timetk)
+library(timechange)
+
+library(conflicted)
+conflicts_prefer(dplyr::filter)
 ```
 
-
 ```{r echo = "FALSE"}
-#| label: Other relevant libraries (I leave them here for reference)
+#| label: Load the relevant libraries
 
 # Time series
 library(dlm)
@@ -50,7 +57,6 @@ library(viridis)
 library(gridExtra)
 library(magrittr)
 library(textab)
-library(gridExtra)
 
 # Packages related to tidyverse, for data manipulation
 library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
@@ -76,7 +82,7 @@ To begin, prepare the dataset by removing the seasonal component to isolate the 
 ```{r}
 #| label: Load data
 data <- read.csv("gistemp.txt", header = TRUE) 
-monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
+monthly_data <- data[, 2:13] 
 ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
 ```
 
@@ -94,6 +100,8 @@ ts_deseasonalized <- ts_data - seasonal
 ```
 
 ```{r}
+#| label: Plotting the ts object without seasonality
+
 df <- data.frame(
   date  = as.yearmon(time(ts_data)), 
   orig  = as.numeric(ts_data),
@@ -102,9 +110,9 @@ df <- data.frame(
 
 ggplot(df, aes(x=date)) +
   geom_line(aes(y=orig, color="Original"), linewidth = 1) +
-  geom_line(aes(y=deseason, color="Deseasonalized"), linewidth = 0.5) +
+  geom_line(aes(y=deseason, color="Deseasonalized"), linewidth = 0.35) +
   scale_color_manual(NULL, 
-                     values=c("Original"="firebrick","Deseasonalized"="steelblue")) +
+                     values=c("Original"="firebrick","Deseasonalized"="orange")) +
   labs(title="GISTEMP time series",
        subtitle = "Raw vs deseasonalized data",
        y="Temp anomaly") +
@@ -119,7 +127,7 @@ ggplot(df, aes(x=date)) +
 
 ## 1. Random Walk plus Noise
 
-This model assumes the observed temperature series $Y_t$ follows a latent process µt, which evolves slowly over time:
+This model assumes the observed temperature series $Y_t$ follows a latent process $\mu_t$, which evolves slowly over time:
 
 $$
 Y_t = \mu_t + \epsilon_t \quad \quad \epsilon_t \sim \mathcal{N}(0,\sigma^2)
@@ -134,13 +142,15 @@ $$
 > Fit the model to the full time series.
 
 ```{r}
-#| label: build-rw
+#| label: Building the RW + Noise model
+
 # 1.1 Build function: parameters on log‐scale for stability
 build_rw <- function(par) {
   # par = c(log(obsVar), log(stateVar))
   dlmModPoly(order=1,
              dV = exp(par[1]),
-             dW = exp(par[2]))
+             dW = exp(par[2]),
+  )
 }
 
 # 1.2 Initial guesses
@@ -170,6 +180,7 @@ cat("Estimated σ² =", round(sigma2_hat,5),
 
 ```{r}
 #| label: Smoothed level
+
 sm_rw <- dlmSmooth(ts_deseasonalized, mod_rw)
 
 # sm_rw$s is a Tx1 matrix (including the initial prior)
@@ -178,6 +189,8 @@ mu_smooth <- dropFirst(sm_rw$s)
 ```
 
 ```{r}
+#| label: Plotting the smoothed level
+
 df_rw <- data.frame(
   date      = as.yearmon(time(ts_deseasonalized)), 
   deseason  = as.numeric(ts_deseasonalized),
@@ -187,9 +200,9 @@ df_rw <- data.frame(
 # Plot both series
 ggplot(df_rw, aes(x = date)) +
   geom_line(aes(y = deseason, color = "Deseasonalized")) +
-  geom_line(aes(y = smooth,   color = "Smoothed level"), linewidth = 0.5) +
+  geom_line(aes(y = smooth,   color = "Smoothed level"), linewidth = 0.35) +
   scale_color_manual("", 
-    values = c("Deseasonalized" = "firebrick", "Smoothed level" = "steelblue")
+    values = c("Deseasonalized" = "orange", "Smoothed level" = "steelblue")
   ) +
   labs(
     title = "Random Walk + Noise",
@@ -208,10 +221,13 @@ ggplot(df_rw, aes(x = date)) +
 
 ```{r}
 #| label: Implied trend
+
 trend_imp <- diff(mu_smooth)
 ```
 
 ```{r}
+#| label: Plotting the evolution of the mean's first difference
+
 df_trend <- data.frame(
   date  = as.yearmon(time(trend_imp)),
   trend = as.numeric(trend_imp)
@@ -241,10 +257,15 @@ ggplot(df_trend, aes(x = date, y = trend)) +
 #### (i) One‑step‑ahead residuals
 
 ```{r}
-# get the raw residuals and drop the initial NA
+#| label: Obtaining raw residuals
+
 filt_rw <- dlmFilter(ts_deseasonalized, mod_rw)
 resid_tot_rw    <- residuals(filt_rw, type="raw")
 resid_rw <- as.numeric(resid_tot_rw$res)
+```
+
+```{r}
+#| label: Plotting the ACF
 
 # Compute the ACF object 
 acf_obj <- acf(resid_rw, lag.max = 36, plot = FALSE)
@@ -263,18 +284,25 @@ autoplot(acf_obj) +
 ```
 
 ```{r}
+#| label: Performing a Box-Ljung test
+
 Box.test(resid_rw, lag = 12, type = "Ljung-Box", fitdf = 0)
 ```
+
 #### (ii) In‑sample RMSE
 
 ```{r}
+#| label: Calculating the Residual Minimum Squared Error
+
 rmse_rw <- sqrt(mean(resid_rw^2, na.rm=TRUE))
 cat("In-sample RMSE =", round(rmse_rw,4), "\n")
 ```
 
-#### (iii) 
+#### (iii) Graphical exploration
 
 ```{r}
+#| label: Graphical representation and analysis of the 1-step residuals
+
 df_r <- data.frame(resid = resid_rw)
 
 # (a) Histogram + normal curve
@@ -343,53 +371,201 @@ $$
 > Fit each model to the full time series.
 
 ```{r}
-#| label: build-llt
+# 2.1    Build function: parameters on log‐scale for stability
 build_llt <- function(par) {
-  # par = c(log(obsVar), log(levelVar), log(slopeVar))
+  # par = c(log(obsVar), log(levelVar), log(trendVar))
   dlmModPoly(order = 2,
-             dV = exp(par[1]),
-             dW = c(exp(par[2]), exp(par[3])))
+             dV = exp(par[1]),           # σ²
+             dW = diag(exp(par[2:3])) # diag(τ², γ²)
+  )
 }
 
-init_llt <- log(c(var(ts_deseasonalized)*0.5,
-                  var(ts_deseasonalized)*0.1,
-                  var(ts_deseasonalized)*0.1))
+# 2.2    Initial guesses: 
+init_par2 <- log(c(var(ts_deseasonalized) * 0.5,
+                   var(ts_deseasonalized) * 0.1,
+                   var(ts_deseasonalized) * 0.01))
 
-fit_llt  <- dlmMLE(ts_deseasonalized, parm = init_llt, build = build_llt)
-mod_llt  <- build_llt(fit_llt$par)
+# 2.3    Maximum‐likelihood estimation
+init_par2 <- log(c(
+  var(ts_deseasonalized) * 0.5,
+  var(ts_deseasonalized) * 0.1,
+  var(ts_deseasonalized) * 0.01
+))
 
-# smoothing
-sm_llt    <- dlmSmooth(ts_deseasonalized, mod_llt)
-level_llt <- dropFirst(sm_llt$s)[,1]
-slope_llt <- dropFirst(sm_llt$s)[,2]
+fit_llt <- dlmMLE(ts_deseasonalized,
+                  parm = init_par2, 
+                  build = build_llt)
 
-# residuals & RMSE
-f_llt <- dlmFilter(ts_deseasonalized, mod_llt)
-e_llt <- residuals(f_llt, type="raw")
-rmse_llt <- sqrt(mean(e_llt^2, na.rm=TRUE))
+if (fit_llt$convergence != 0) stop("LLT MLE did not converge")
 
-# plots
-p1 <- autoplot(ts_deseasonalized) +
-  autolayer(level_llt, color="darkgreen", size=1) +
-  labs(title=sprintf("LLT: level (RMSE=%.3f)", rmse_llt),
-       y="Deseasonalized anomaly") +
-  theme_minimal()
-
-p2 <- autoplot(slope_llt) +
-  labs(title="LLT: slope (°C per month)", y="Slope") +
-  theme_minimal()
-
-grid.arrange(p1, p2, nrow=2)
-
+mod_llt     <- build_llt(fit_llt$par)
+sigma2_hat  <- exp(fit_llt$par[1])
+tau2_hat    <- exp(fit_llt$par[2])
+gamma2_hat  <- exp(fit_llt$par[3])
+cat(sprintf("Estimated σ² = %.5f   τ² = %.5f   γ² = %.5f\n",
+            sigma2_hat, tau2_hat, gamma2_hat))
 ```
 
 ### 2.b
 
 > Extract the latent components (level, trend, seasonality) using smoothing techniques.
 
+```{r}
+# 2.1    Smooth the full series
+sm_llt <- dlmSmooth(ts_deseasonalized, mod_llt)
+
+# sm_llt$s is a (T+1)×2 matrix; dropFirst() aligns to t=1...T
+states  <- dropFirst(sm_llt$s)
+mu_s    <- states[, 1]  # smoothed level μ_t
+beta_s  <- states[, 2]  # smoothed slope β_t
+```
+
+```{r}
+#| label: Level vs. data
+
+df_llt <- data.frame(
+  date  = as.yearmon(time(ts_deseasonalized)),
+  deseason = as.numeric(ts_deseasonalized),
+  level    = mu_s,
+  slope    = beta_s
+)
+
+p_level <- ggplot(df_llt, aes(x = date)) +
+  geom_line(aes(y = deseason, color = "Deseasonalized"), size = 1) +
+  geom_line(aes(y = level,    color = "Smoothed level"),   size = 0.5) +
+  scale_color_manual(NULL,
+    values = c("Deseasonalized"="firebrick","Smoothed level"="steelblue")
+  ) +
+  labs(
+    title    = "Locally Linear Trend: Smoothed Level",
+    subtitle = expression(mu[t]),
+    y        = "Temperature anomaly"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size=16, face="bold"),
+    plot.subtitle = element_text(size=12, face="italic")
+  )
+
+print(p_level)
+```
+
+```{r}
+#| label: Slope over time
+
+p_slope <- ggplot(df_llt, aes(x = date, y = slope)) +
+  geom_line(color = "darkgreen", size = 0.5) +
+  labs(
+    title    = "Locally Linear Trend: Smoothed Slope",
+    subtitle = expression(beta[t]),
+    y        = "°C per month",
+    x        = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size=16, face="bold"),
+    plot.subtitle = element_text(size=12, face="italic")
+  )
+print(p_slope)
+```
+
 ### 2.c
 
 > Evaluate the models prediction based on their interpretability and quality.
+
+#### (i) One‑step‑ahead residuals
+
+```{r}
+#| label: Obtaining raw residuals
+
+filt_llt   <- dlmFilter(ts_deseasonalized, mod_llt)
+resid_obj  <- residuals(filt_llt, type="raw")
+resid_llt  <- as.numeric(resid_obj$res)
+```
+
+```{r}
+#| label: Plotting the ACF
+
+acf_llt <- acf(resid_llt, lag.max=36, plot=FALSE)
+autoplot(acf_llt) +
+  labs(
+    title = "ACF of 1‐step Residuals (LLT Model)",
+    x     = "Lag",
+    y     = "ACF"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(size=16, face="bold"))
+```
+
+```{r}
+#| label: Performing a Box-Ljung Test
+
+Box.test(resid_llt, lag=12, type="Ljung-Box", fitdf=0)
+```
+
+#### (ii) In‑sample RMSE
+
+```{r}
+rmse_llt <- sqrt(mean(resid_llt^2, na.rm=TRUE))
+cat("In‐sample RMSE (LLT) =", round(rmse_llt, 4), "\n")
+```
+
+#### (iii) Graphical exploration
+
+```{r}
+df_resid2 <- data.frame(resid = resid_llt)
+
+# (a) Histogram with overlaid Normal(0,sd) curve
+p2_hist <- ggplot(df_resid2, aes(x = resid)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 30,
+                 color = "steelblue",
+                 fill  = "lightblue") +
+  stat_function(fun = dnorm,
+                args = list(mean = mean(df_resid2$resid, na.rm=TRUE),
+                            sd   = sd(df_resid2$resid, na.rm=TRUE))) +
+  labs(
+    title    = "Residuals Histogram (LLT)",
+    subtitle = "With fitted Normal curve",
+    x        = "Residual",
+    y        = "Density"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size=16, face="bold"),
+    plot.subtitle = element_text(size=12, face="italic")
+  )
+
+# (b) QQ‐plot
+p2_qq <- ggplot(df_resid2, aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(
+    title    = "QQ‐plot of LLT Residuals",
+    subtitle = "Checking Normality",
+    x        = "Theoretical Quantiles",
+    y        = "Sample Residuals"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size=16, face="bold"),
+    plot.subtitle = element_text(size=12, face="italic")
+  )
+
+# Arrange vertically
+grid.arrange(p2_hist, p2_qq, ncol = 1)
+```
+
+#### (iv) Variance ratios
+
+```{r}
+cat(sprintf("Estimated σ² = %.5f\nEstimated τ² = %.5f\nEstimated γ² = %.5f\nRatio τ²/σ² = %.3f   γ²/σ² = %.3f\n",
+            sigma2_hat,
+            tau2_hat,
+            gamma2_hat,
+            tau2_hat/sigma2_hat,
+            gamma2_hat/sigma2_hat))
+```
 
 ## 3. Comparison with HMM
 
