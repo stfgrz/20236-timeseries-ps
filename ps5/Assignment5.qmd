@@ -371,13 +371,14 @@ $$
 > Fit each model to the full time series.
 
 ```{r}
-# 2.1    Build function: parameters on log‐scale for stability
+
+# 2.1 Build LLT model function (parameters on log-scale)
 build_llt <- function(par) {
-  # par = c(log(obsVar), log(levelVar), log(trendVar))
-  dlmModPoly(order = 2,
-             dV = exp(par[1]),           # σ²
-             dW = diag(exp(par[2:3])) # diag(τ², γ²)
-  )
+  mod <- dlmModPoly(order = 2)
+  mod$V[]     <- exp(par[1])      # Observation variance (σ²)
+  mod$W[1,1]  <- exp(par[2])      # Level variance (τ²)
+  mod$W[2,2]  <- exp(par[3])      # Slope variance (γ²)
+  return(mod)
 }
 
 # 2.2    Initial guesses: 
