@@ -5,11 +5,37 @@ format: pdf
 editor: visual
 ---
 
+```{r}
+#| label: Necessary packages
+#| include: false
+
+library(dlm)
+library(forecast)
+
+library(ggplot2)
+library(ggfortify)
+
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
+
+library(modeltime)
+library(timetk)
+library(timechange)
+
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+```
+
+
 # Description of the problem
 
 This project explores both short and long term climatological patterns using data from the Global Historical Climatology Network (GHCN) database. The GHCN database represents one of the most comprehensive and reliable sources of historical climate and weather data, making it particularly valuable for studying temporal patterns.
 
-A fundamental distinction in atmospheric science lies between weather and climate analysis. Weather refers to short-term variations in temperature, precipitation, and other meteorologi- cal variables. These short-term fluctuations can be highly variable and are typically studied for day-to-day (or week-to-week) forecasting. Climate, in contrast, represents the long-term patterns and averages of these weather conditions, usually analyzed over periods of decades. We display in Figure 1 and Figure 2 two examples of climate and weather data, respectively.
+A fundamental distinction in atmospheric science lies between weather and climate analysis. Weather refers to short-term variations in temperature, precipitation, and other meteorological variables. These short-term fluctuations can be highly variable and are typically studied for day-to-day (or week-to-week) forecasting. Climate, in contrast, represents the long-term patterns and averages of these weather conditions, usually analyzed over periods of decades. We display in Figure 1 and Figure 2 two examples of climate and weather data, respectively.
 
 Through this project you will investigate both phenomena exploiting different statistical methods you will learn during the course. For instance, some of the questions you will be asked to answer are:
 
@@ -19,15 +45,15 @@ Through this project you will investigate both phenomena exploiting different st
 
 While for weather purposes you can directly work with raw data from the GHCN archive, in order to extract some long term information it is better to analyze aggregated data. In fact, some pre–processing steps stress macro–behaviors by smoothing out some short-term variations. In this direction, one of the most reliable and influential sources is GISTEMP (GISS Surface Temperature Analysis) a product of the NASA Goddard Institute for Space Studies which merges some data gathered from GHCN meteorological stations with some ocean related data from ERSST stations.
 
-# Explanatory analysis of climate data
+# Data description
 
-## Data
+## GISTEMP
 
 As a first step, you will focus on the temperature data coming from GISTEMP. The series provided represents changes in the global surface temperature over time. It is derived from a global network of land and ship weather stations, which track daily surface temperatures. Measurements are then adjusted for urban heat effects and other biases, aggregated monthly and averaged across stations. Lastly, since the quantity of interest is the variation of the global surface temperature, the final measurements are adjusted by subtracting the average global surface temperature over the period 1951-1980, which serves as a reference value.
 
 The data set provides a reliable long-term record of temperature anomalies, offering valuable information on climate trends and variability.
 
-The data is provided in a csv file named gistemp.txt. Each row refers to a calendar year (starting from 1880, up to 2024) and contains the following variables.
+The data is provided in a csv file named `gistemp.txt`. Each row refers to a calendar year (starting from 1880, up to 2024) and contains the following variables.
 
 -   **1st column**: calendar year;
 -   **2nd to 13th**: monthly temperature difference with respect to reference period;
@@ -36,44 +62,330 @@ The data is provided in a csv file named gistemp.txt. Each row refers to a calen
 
 You will need to extract the relevant variable (the monthly data) and convert it to a properly formatted ts object.
 
-## Task
+## GHCN
 
-Perform an exploratory analysis to answer the following questions, supporting your answers with valid analysis when necessary (at your discretion).
+Next, we turn our attention to the GHCN (Global Historical Climatology Network) dataset, which provides high-resolution daily climate observations from thousands of land-based weather stations around the world. The data is widely used for studies on local and regional climate patterns, extreme weather events, and short-term trends.
 
--   What long-term trends are visible in the temperature data? Are there periods of acceleration or deceleration in warming?
--   Can you describe the seasonal pattern and provide an interpretation?
--   Is the seasonality constant over time?
--   Using only exploratory tools, can you predict the climate evolution? You can pretend to be in 2019 and do 5–steps ahead prediction or provide recursive 1–step ahead forecasts. Can you also provide an assessment of the uncertainty of these predictions? If so, how? If not, why not?
+The dataset includes daily measurements of key meteorological variables such as temperature and precipitation. Each observation records minimum, maximum, and average daily temperatures, as well as the amount of precipitation, making it particularly valuable for fine-grained temporal analyses.
 
-# Groupwork
+The data is provided in a .`txt` file named `ghcn.txt`. Each row in the dataset corresponds to a single daily observation from a specific weather station. The columns are as follows:
 
-# 1 Exploratory Data Analysis
+-   **1st column**: Station ID (a unique identifier for each weather station);
 
-## 1.1 Descriptive statistics
+-   **2nd column**: Station name;
 
-### 1.1.1 Long-term Trends
+-   **3rd to 5th columns**: Geographic coordinates and elevation of the station (latitude, longitude, elevation in meters);
 
-> What long-term trends are visible in the temperature data?
+-   **6th column**: Date of observation (formatted as YYYY-MM-DD).
 
-### 1.1.2 Acceleration and Deceleration
+-   **7th column**: Minimum temperature of the day (TMIN), recorded in tenths of degrees Celsius;
 
-> Are there periods of acceleration or deceleration in warming?
+-   **8th column**: Maximum temperature of the day (TMAX), recorded in tenths of degrees Celsius;
 
-## 1.2 Seasonality
+-   **9th column**: Average temperature of the day (TAVG), recorded in tenths of degrees Celsius;
 
-### 1.2.1 Seasonal pattern
+-   **10th column**: Daily total precipitation (PRCP), recorded in tenths of millimeters.
 
-> Can you describe the seasonal pattern and provide an interpretation?
+# Task 1 \| Data acquisition and exploration
 
-### 1.2.2 Evolution of seasonality
+Extract the data from the GISTEMP and GHCN datasets. Specifically, for daily data we will focus solely maximum and minimum temperature measurements from the `San Francisco Downtown` station. Describe suitably the two time series, with appropriate plots and comments. Perform a time series decomposition using appropriate tools and highlight relevant features (if present) for each component.
 
-> Is the seasonality constant over time?
+```{r}
+#| label: Load GISTEMP
 
-## 1.3 Exploratory Forecasts
+gistemp <- read.csv("fp_data/gistemp.txt", header = TRUE) 
+monthly_gistemp <- gistemp[, 2:13] 
+ts_gistemp <- ts(as.vector(t(monthly_gistemp)),
+                 start = c(1880, 1),
+                 frequency = 12)
+```
 
-### 1.3.1 5-steps ahead predictions
+```{r}
+#| label: Load GHCN
 
-### 1.3.2 Recursive 1-step ahead forecasts
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE) 
 
-### 1.3.3 Forecast evaluation
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
 
+ghcn <- ghcn %>%
+  mutate(
+    date  = as_date(date),                   # YYYY-MM-DD → Date
+    tmin  = tmin_tenthC / 10,                # → °C
+    tmax  = tmax_tenthC / 10,                # → °C
+    prcp  = prcp_tenthmm / 10                # → mm
+  ) %>%
+  select(-tmin_tenthC, -tmax_tenthC, -tavg_tenthC, -prcp_tenthmm)
+```
+
+```{r}
+#| label: Filtering for the San Francisco Station
+
+sf <- ghcn %>%
+  filter(station_id == "USW00023272") %>%
+  arrange(date)
+```
+
+```{r}
+#| label: Converting to a daily time series object
+
+start_yr  <- year(min(sf$date))
+start_doy <- yday(min(sf$date))
+
+ts_tmin <- ts(sf$tmin,
+              start     = c(start_yr, start_doy),
+              frequency = 365)
+ts_tmax <- ts(sf$tmax,
+              start     = c(start_yr, start_doy),
+              frequency = 365)
+ts_prcp <- ts(sf$prcp,
+              start     = c(start_yr, start_doy),
+              frequency = 365)
+```
+
+
+# Task 2 \| GISTEMP: Do the data document global warming?
+
+Consider the seasonality adjusted time-series from the GISTEMP data.
+
+## 2.1 Hidden Markov Models
+
+Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
+
+
+
+## 2.2 Dynamic Linear Models
+
+Explore the use of Dynamic Linear Models such as random walk plus noise or locally linear trend to address the presence of acceleration/deceleration in global warming. You can opt to use more structured models (if you choose a model with seasonality, you can use the full time series). Comment on the results, and compare them with the ones obtained using HMMs.
+
+> Stefano:
+
+```{r}
+#| label: Building the DLM
+
+# 1. Builder: log‐parameters = log(c(V, W_mu, W_beta, W_seas))
+buildLL2S <- function(par) {
+  V      <- exp(par[1])
+  W_mu   <- exp(par[2])
+  W_beta <- exp(par[3])
+  W_seas <- exp(par[4])
+  trend  <- dlmModPoly(order = 2,
+                       dV = V,
+                       dW = c(W_mu, W_beta))
+  seas   <- dlmModSeas(frequency = 12, 
+                       dV = 0,
+                       dW = c(W_seas, rep(0,10)))
+  trend + seas
+}
+```
+
+```{r}
+#| label: Obtaining the MLE estimates
+
+init <- log(c(var(ts_gistemp),  # V
+              var(ts_gistemp)/100,  # W_mu
+              var(ts_gistemp)/1000, # W_beta
+              var(ts_gistemp)/100)) # W_seas
+
+fitLL2S <- dlmMLE(ts_gistemp, parm = init, build = buildLL2S)
+modLL2S <- buildLL2S(fitLL2S$par)
+```
+
+```{r}
+#| label: Filtering and smoothing
+
+# 2. Smoothed means (drop init)
+m_smth_all <- smthLL2S$s[-1, ]      # matrix T×13
+level_smth <- m_smth_all[, 1]       # length T
+
+# 3. Extract level variances at each time
+Ct_smooth_list <- dlmSvd2var(smthLL2S$U.S, smthLL2S$D.S)
+var_level      <- sapply(Ct_smooth_list, function(mat) mat[1,1])  # length T+1
+sd_level       <- sqrt(var_level)[-1]                             # drop init → length T
+
+# 4. Build 95% bands
+upper95_smth <- level_smth + 1.96 * sd_level
+lower95_smth <- level_smth - 1.96 * sd_level
+
+# 5. Time index
+time_idx <- seq(
+  from       = start(ts_gistemp)[1] + (start(ts_gistemp)[2]-1)/12,
+  by         = 1/12,
+  length.out = length(ts_gistemp)
+)
+
+# 6. Data frame
+df_smth <- data.frame(
+  Time       = time_idx,
+  Anomaly    = as.numeric(ts_gistemp),
+  Level_smth = level_smth,
+  Upper95    = upper95_smth,
+  Lower95    = lower95_smth
+)
+
+# 7. Plot
+ggplot(df_smth, aes(x = Time)) +
+  geom_line(aes(y = Anomaly),  color = "orange", linewidth = 0.7) +
+  geom_line(aes(y = Level_smth), color = "steelblue", linewidth = 0.5) +
+  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
+              fill = "steelblue", alpha = 0.2) +
+  labs(
+    title    = "Smoothed Level from Seasonally-Augmented Local Linear Trend",
+    subtitle = "95% credible intervals around the smoothed μ_t",
+    x        = "Year",
+    y        = "Temperature Anomaly (°C)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+### 2.2.a Evaluating the model
+
+```{r}
+#| label: Residual diagnostics
+
+# (a) raw and standardized one‐step–ahead errors
+raw_resid <- residuals(filtLL2S, type = "raw")
+std_resid <- residuals(filtLL2S, type = "standardized", sd = FALSE)
+
+# (b) Plot standardized residuals over time
+ts.plot(std_resid, ylab = "Std. Residuals", main = "Standardized One-step-Ahead Errors")
+abline(h = c(-2,2), col = "firebrick", lty = 2)
+
+# (c) ACF to check for remaining autocorrelation
+acf(std_resid, main = "ACF of Standardized Residuals")
+
+# (d) Histogram + normal curve
+hist(std_resid, freq = FALSE, main = "Histogram of Std. Residuals",
+     xlab = "Std. Residual")
+curve(dnorm(x), add = TRUE)
+
+# (e) QQ‐plot
+qqnorm(std_resid); qqline(std_resid)
+
+# (f) Ljung–Box test for whiteness
+Box.test(std_resid, type = "Ljung-Box", lag = 20)
+```
+
+```{r}
+#| label: Parameter uncertainty
+
+# 1. MLE with Hessian (ATTENTO CHE CI METTE UN BOTTO, VALUTIAMO SE FARE SU R ONLINE CHE QUI IL TOSTAPANE SI FONDE - STEFANO & TOSTAPANE)
+fit_hess <- dlmMLE(ts_gistemp, parm = init, build = buildLL2S, hessian = TRUE)
+
+# 2. Extract log‐parameters & invert Hessian
+log_par <- fit_hess$par
+vcov_log <- solve(fit_hess$hessian)
+se_log   <- sqrt(diag(vcov_log))
+
+# 3. Build a summary table
+param_tab <- data.frame(
+  param     = c("V", "W_mu", "W_beta", "W_seas"),
+  log_est   = log_par,
+  log_se    = se_log
+)
+param_tab$est     <- exp(param_tab$log_est)
+param_tab$lower95 <- exp(param_tab$log_est - 1.96 * param_tab$log_se)
+param_tab$upper95 <- exp(param_tab$log_est + 1.96 * param_tab$log_se)
+
+print(param_tab)
+```
+
+```{r}
+#| label: Model fit: log‐likelihood, AIC, BIC
+
+# log‐likelihood at the MLE (dlmMLE returns val = –logLik)
+logLik <- -fit_hess$value
+p      <- length(log_par)
+n      <- length(ts_gistemp)
+
+AIC <- -2*logLik + 2*p
+BIC <- -2*logLik + log(n)*p
+
+cat("logLik =", logLik, "\nAIC =", AIC, "\nBIC =", BIC, "\n")
+```
+
+```{r}
+#| label: Model fit comparison with pure LLT
+
+fitLL2 <- dlmMLE(ts_gistemp, parm=init, build=buildLL2) 
+logLik2 <- -fitLL2$value
+p2      <- length(fitLL2$par)
+AIC2    <- -2*logLik2 + 2*p2
+BIC2    <- -2*logLik2 + log(length(ts_gistemp))*p2
+cat("ΔAIC =",  AIC - AIC2,  "   ΔBIC =", BIC - BIC2)
+```
+
+```{r}
+#| label: Forecast‐performance on a hold‐out
+
+# (a) Define training sample ending December 2014
+n_train   <- length(ts_gistemp) - 120
+t_end     <- time(ts_gistemp)[n_train]
+train_ts  <- window(ts_gistemp, end = t_end)
+
+# (b) Re‐fit on training data
+fit_train <- dlmMLE(train_ts, parm = init, build = buildLL2S)
+mod_train <- buildLL2S(fit_train$par)
+filt_train<- dlmFilter(train_ts, mod_train)
+
+# (c) Forecast next 120 months
+fc        <- dlmForecast(filt_train, nAhead = 120)
+y_true    <- as.numeric(ts_gistemp[(n_train+1):length(ts_gistemp)])
+y_pred    <- drop(fc$f)          # forecast means
+y_lo      <- fc$a + qnorm(0.025)*sqrt(unlist(lapply(fc$Q, function(Q) Q[1,1])))
+y_hi      <- fc$a + qnorm(0.975)*sqrt(unlist(lapply(fc$Q, function(Q) Q[1,1])))
+
+# (d) Compute accuracy metrics
+errors <- y_true - y_pred
+RMSE   <- sqrt(mean(errors^2))
+MAE    <- mean(abs(errors))
+coverage <- mean((y_true >= y_lo) & (y_true <= y_hi))
+
+cat("RMSE =", round(RMSE,3),
+    " MAE =", round(MAE,3),
+    " 95% CI coverage =", round(coverage*100,1), "%\n")
+```
+
+
+# Task 3 \| GHCN: Weather prediction
+
+The dataset includes data along space (several stations) and time. Typical aspects of interest are spatial interpolations (at a fixed time) or, in our case, DLM models for spatio-temporal data, considering temperature over time for multiple stations (say 2, for simplicity). You are welcome to explore this direction. However, to keep your workload lighter, here is our suggestion for your possible analysis, focusing only on one station, namely `San Francisco Downtown`.
+
+## 3.1 Data and question
+
+Extract the seasonality adjusted minimum and maximum daily temperatures from the `San Francisco Downtown` station. We want to obtain short term predictions for the minimum and maximum temperature and to investigate a potential common latent process that describes the weather in San Francisco.
+
+N.B.: You need to divide columns 7, 8, and 9 to obtain temperatures (`TMIN`, `TMAX`, `TAVG`) in Celsius degrees.
+
+## 3.2 Short term temperature prediction
+
+Explore the use of Dynamic Linear Models to obtain short term temperature predictions. Evaluate the models based on their interpretability and the quality of their predictions.
+
+Namely, consider the bivariate time series of minimum and maximum temperature, \[ Y_t =
+
+\begin{bmatrix}
+T_{\min,t} \\[4pt]
+T_{\max,t}
+\end{bmatrix}
+
+\] and explore the following models.
+
+### 3.2.(a) Independent random walk plus noise models
+
+### 3.2.(b) “Seemingly unrelated” random walk plus noise models (V diagonal and W full)
+
+### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
