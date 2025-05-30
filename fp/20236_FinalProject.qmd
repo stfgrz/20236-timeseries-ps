@@ -23,6 +23,7 @@ library(viridis)
 library(gridExtra)
 library(magrittr)
 library(textab)
+library(reshape2)
 
 library(modeltime)
 library(timetk)
@@ -99,6 +100,17 @@ monthly_gistemp <- gistemp[, 2:13]
 ts_gistemp <- ts(as.vector(t(monthly_gistemp)),
                  start = c(1880, 1),
                  frequency = 12)
+```
+
+Keep in mind, our model will include a seasonal component, hence this chunk **shall not be run**
+
+```{r}
+#| label: Adjusting for seasonality
+stl_decomp <- stl(ts_gistemp, s.window = "periodic", robust = TRUE)
+
+seasonal_comp <- stl_decomp$time.series[, "seasonal"]
+ts_gistemp_ds <- ts_gistemp - seasonal_comp
+
 ```
 
 ```{r}
@@ -201,6 +213,8 @@ modLL2S <- buildLL2S(fitLL2S$par)
 
 ```{r}
 #| label: Filtering and smoothing
+#| fig-width: 12
+#| fig-height: 6
 
 filtLL2S <- dlmFilter(ts_gistemp, modLL2S)
 smthLL2S <- dlmSmooth(filtLL2S)
@@ -372,8 +386,8 @@ cat("ΔAIC =",  AIC - AIC2,  "   ΔBIC =", BIC - BIC2)
 ```{r}
 #| label: Forecast‐performance on a hold‐out | Traditional method
 
-# (a) Define training sample ending December 2014
-n_train   <- length(ts_gistemp) - 120
+# (a) Define training sample ending December 2019
+n_train   <- length(ts_gistemp) - 60
 t_end     <- time(ts_gistemp)[n_train]
 train_ts  <- window(ts_gistemp, end = t_end)
 
@@ -383,7 +397,7 @@ mod_train <- buildLL2S(fit_train$par)
 filt_train<- dlmFilter(train_ts, mod_train)
 
 # (c) Forecast next 120 months
-fc        <- dlmForecast(filt_train, nAhead = 120)
+fc        <- dlmForecast(filt_train, nAhead = 60)
 y_true    <- as.numeric(ts_gistemp[(n_train+1):length(ts_gistemp)])
 y_pred    <- drop(fc$f)          # forecast means
 y_lo      <- fc$a + qnorm(0.025)*sqrt(unlist(lapply(fc$Q, function(Q) Q[1,1])))
@@ -439,12 +453,11 @@ $$
 \sigma^2_{v,1} & 0\\
 0 & \sigma^2_{v,2}
 \end{bmatrix}.
-$$
-> Stefano
+$$ \> Stefano
 
 ```{r}
 #| label: 1. Builder: log‐parameters = log(c(V1, V2, W1, W2))
-#| 
+
 buildIndRWNoise <- function(par) {
   V1 <- exp(par[1])
   V2 <- exp(par[2])
@@ -670,7 +683,6 @@ cat("logLik =", logLik,
     "\nBIC    =", BIC, "\n")
 ```
 
-
 ```{r}
 #| label: Forecast performance (hold‐out)
 
@@ -709,9 +721,6 @@ cat(sprintf("Tmin   %.3f  %.3f   %.1f%%\n", rmse[1], mae[1], coverage[1]))
 cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse[2], mae[2], coverage[2]))
 ```
 
-
-
-
 ### 3.2.(b) “Seemingly unrelated” random walk plus noise models (V diagonal and W full)
 
 $$
@@ -721,8 +730,7 @@ $$
 \boldsymbol{\theta}_t &= \boldsymbol{\theta}_{t-1} + \mathbf{w}_t, 
   &\mathbf{w}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{W}),
 \end{aligned}
-$$
-where
+$$ where
 
 $$
 \mathbf{W} = 
@@ -738,13 +746,135 @@ $$
 \end{bmatrix}.
 $$
 
+```{r}
+#| label: 1. Model‐building function
+
+build_SUTSE <- function(par) {
+  V <- diag(exp(par[1:2]))
+  W <- matrix(c(exp(par[3]), par[4],
+                par[4],      exp(par[5])),
+              2, 2, byrow = TRUE)
+  dlm(
+    FF = diag(2), V = V,
+    GG = diag(2), W = W,
+    m0 = rep(0,2), C0 = diag(1e7,2)
+  )
+}
+```
+
+```{r}
+#| label: 2. fit by MLE
+
+init.par <- rep(0,5)
+mle   <- dlmMLE(y = temp, parm = init.par, build = build_SUTSE)
+mod   <- build_SUTSE(mle$par)
+if (mle$convergence != 0)
+  warning("MLE did not converge: code ", mle$convergence)
+```
+
+```{r}
+#| label: 3. Filtering and smoothing
+
+filt <- dlmFilter(temp, mod)
+smth <- dlmSmooth(filt)
+
+raw    <- residuals(filt, type = "raw", sd = TRUE)
+res_raw <- raw$res     # n×2 ts of one-step-ahead errors y_t - ŷ_{t|t-1}
+pred_se <- raw$sd      # n×2 ts of predictive standard deviations
+
+# reconstruct the in‐sample forecasts 
+y_pred <- temp - res_raw
+
+# standardize residuals 
+res_std <- res_raw / pred_se
+```
+
+#### 3.2.(b).(i) Evaluating the model
+
+```{r}
+#| label: 1. Diagnostic plots
+
+par(mfrow = c(2,2), mar = c(4,4,2,1))
+ts.plot(res_std[,1], main="Std. resid: Tmin"); abline(h=0, col="gray")
+ts.plot(res_std[,2], main="Std. resid: Tmax"); abline(h=0, col="gray")
+acf(res_std[,1], main="ACF Std resid: Tmin")
+acf(res_std[,2], main="ACF Std resid: Tmax")
+
+par(mfrow = c(1,2))
+qqnorm(res_std[,1], main="QQ: Std resid Tmin"); qqline(res_std[,1])
+qqnorm(res_std[,2], main="QQ: Std resid Tmax"); qqline(res_std[,2])
+```
+
+```{r}
+#| label: 2. Forecast accuracy metrics
+
+ok  <- complete.cases(res_raw)   # drop initial NA
+e   <- res_raw[ok,]              # raw errors
+se  <- pred_se[ok,]              # predictive SD
+
+rmse <- sqrt(colMeans(e^2))
+mae  <- colMeans(abs(e))
+
+lower <- y_pred - 1.96 * pred_se
+upper <- y_pred + 1.96 * pred_se
+cov  <- sapply(1:2, function(i)
+  mean(temp[ok,i] >= lower[ok,i] & temp[ok,i] <= upper[ok,i]) * 100
+)
+```
+
+```{r}
+#| label: 3. Print summary
+
+cat("Series   RMSE    MAE   95% PI Coverage\n")
+cat(sprintf("Tmin   %6.3f %6.3f    %5.1f%%\n",
+            rmse[1], mae[1], cov[1]))
+cat(sprintf("Tmax   %6.3f %6.3f    %5.1f%%\n",
+            rmse[2], mae[2], cov[2]))
+
+colnames(y_pred) <- colnames(temp)
+```
+
+```{r}
+#| label: 4. Build dataframe for plotting
+
+df <- data.frame(
+  time      = as.numeric(time(temp)),
+  Tmin      = as.numeric(temp[, "Tmin"]),
+  Tmax      = as.numeric(temp[, "Tmax"]),
+  Tmin_pred = as.numeric(y_pred[, "Tmin"]),
+  Tmax_pred = as.numeric(y_pred[, "Tmax"])
+)
+
+# melt into long form
+df_melt <- melt(df, id.vars = "time", 
+                variable.name = "Series_Source", 
+                value.name    = "Value")
+
+# split into Series (Tmin/Tmax) and Source (Original/Estimated)
+df_melt$Series <- ifelse(grepl("^Tmin", df_melt$Series_Source), "Tmin", "Tmax")
+df_melt$Source <- ifelse(grepl("_pred$", df_melt$Series_Source), 
+                         "Estimated", "Original")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
 
 $$
 \mathbf{Y}_t = \mathbf{F}\,\boldsymbol{\theta}_t + \mathbf{v}_t,\quad
 \mathbf{v}_t \sim \mathcal{N}(\mathbf{0},\,\mathbf{V}),
-$$
-$$
+$$ $$
 \boldsymbol{\theta}_t = \boldsymbol{\theta}_{t-1} + 
 \begin{pmatrix}
 0 \\[4pt]
@@ -772,9 +902,7 @@ $$
 \sigma^2_{v,11} & 0\\[4pt]
 0 & \sigma^2_{v,22}
 \end{bmatrix}.
-$$
-The parameters $\alpha_1$, $\alpha_2$ and $\beta$ should be determined via MLE.
-
+$$ The parameters $\alpha_1$, $\alpha_2$ and $\beta$ should be determined via MLE.
 
 ```{r}
 #| label: 1. Builder: log‐parameters = c(α1, α2, logβ, logσv1, logσv2, logσw)
@@ -996,7 +1124,10 @@ cat(sprintf("Tmin   %.3f  %.3f   %.1f%%\n", rmse_CF[1], mae_CF[1], coverage_CF[1
 cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse_CF[2], mae_CF[2], coverage_CF[2]))
 ```
 
+```{r}
+#| label: Further checks on forecast performance (hold‐out): CF model
+# compute average half‐width of your 95% intervals
+half_width <- rowMeans((y_hi_CF - y_lo_CF)/2)
+summary(half_width)
 
-
-
-
+```
