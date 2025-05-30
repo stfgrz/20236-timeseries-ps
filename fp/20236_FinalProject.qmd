@@ -749,6 +749,8 @@ $$
 ```{r}
 #| label: 1. Model‐building function
 
+temp <- cbind(Tmin = ts_tmin, Tmax = ts_tmax)
+
 build_SUTSE <- function(par) {
   V <- diag(exp(par[1:2]))
   W <- matrix(c(exp(par[3]), par[4],
@@ -856,17 +858,70 @@ df_melt$Source <- ifelse(grepl("_pred$", df_melt$Series_Source),
                          "Estimated", "Original")
 ```
 
+```{r}
+ggplot(df_melt, aes(x = time, y = Value, color = Source)) +
+  geom_line(size = 0.8) +
+  facet_wrap(~ Series, scales = "free_y", ncol = 1) +
+  scale_color_manual(values = c("Original" = "black", 
+                                "Estimated" = "firebrick")) +
+  labs(
+    x     = "Time (year)",
+    y     = "Temperature",
+    color = "",
+    title = "Original vs One‐Step‐Ahead DLM Estimates"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position  = "top",
+    strip.text       = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey80")
+  )
+```
 
+```{r}
+#| label: Making a subsample of the previous dataset to make it easier to plot and interpret
+df <- data.frame(
+  time      = as.numeric(time(temp)),
+  Tmin      = as.numeric(temp[,"Tmin"]),
+  Tmax      = as.numeric(temp[,"Tmax"]),
+  Tmin_pred = as.numeric(y_pred[,"Tmin"]),
+  Tmax_pred = as.numeric(y_pred[,"Tmax"])
+)
+df_sub <- subset(df, time >= 1990 & time <= 1991)
+df_melt <- melt(df_sub, id.vars = "time",
+                variable.name = "Series_Source",
+                value.name    = "Value")
+df_melt$Series <- ifelse(grepl("^Tmin", df_melt$Series_Source), "Tmin", "Tmax")
+df_melt$Source <- ifelse(grepl("_pred$", df_melt$Series_Source),
+                         "Estimated", "Original")
+```
 
-
-
-
-
-
-
-
-
-
+```{r}
+#| label: Refined plot
+ggplot(df_melt, aes(x = time, y = Value, 
+                    color = Source, linetype = Source)) +
+  geom_line(aes(size = Source)) +
+  facet_wrap(~ Series, scales = "free_y", ncol = 1) +
+  scale_color_manual(values = c("Original" = "black", "Estimated" = "firebrick")) +
+  scale_linetype_manual(values = c("Original" = "solid", "Estimated" = "solid")) +
+  scale_size_manual(values = c("Original" = 1, "Estimated" = 1)) +
+  labs(
+    x     = "Time (year)",
+    y     = "Temperature",
+    color = "",
+    linetype = "",
+    size = "",
+    title = "Original vs. One‐Step‐Ahead DLM Estimates (1975–2000)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    legend.position  = "top",
+    strip.text       = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey80")
+  )
+```
 
 
 ### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
