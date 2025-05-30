@@ -113,7 +113,7 @@ upper_95 <- m_filtered_s1 + 1.96 * sd_filtered_s1
 lower_95 <- m_filtered_s1 - 1.96 * sd_filtered_s1
 ```
 
-> 3.  Finally, plot the data together with the ltering state estimates and their 0.95 credible intervals.
+> 3.  Finally, plot the data together with the filtering state estimates and their 0.95 credible intervals.
 
 ```{r}
 df_nile <- data.frame(

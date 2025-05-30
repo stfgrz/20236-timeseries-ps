@@ -12,6 +12,9 @@ editor: visual
 library(dlm)
 library(forecast)
 
+library(mvtnorm)
+
+
 library(ggplot2)
 library(ggfortify)
 
@@ -29,7 +32,6 @@ library(timechange)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
 ```
-
 
 # Description of the problem
 
@@ -153,7 +155,6 @@ ts_prcp <- ts(sf$prcp,
               frequency = 365)
 ```
 
-
 # Task 2 \| GISTEMP: Do the data document global warming?
 
 Consider the seasonality adjusted time-series from the GISTEMP data.
@@ -161,8 +162,6 @@ Consider the seasonality adjusted time-series from the GISTEMP data.
 ## 2.1 Hidden Markov Models
 
 Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
-
-
 
 ## 2.2 Dynamic Linear Models
 
@@ -204,36 +203,55 @@ modLL2S <- buildLL2S(fitLL2S$par)
 ```{r}
 #| label: Filtering and smoothing
 
-# 2. Smoothed means (drop init)
-m_smth_all <- smthLL2S$s[-1, ]      # matrix T×13
-level_smth <- m_smth_all[, 1]       # length T
+filtLL2S <- dlmFilter(ts_gistemp, modLL2S)
+smthLL2S <- dlmSmooth(filtLL2S)
 
-# 3. Extract level variances at each time
+# 2. Extract the smoothed state means (drop the t=0 init)
+m_smth_all <- smthLL2S$s[-1, ]    # matrix with columns = (level, slope, seasonal…)
+level_smth <- m_smth_all[, 1]     # the level μ_t
+
+# 3. Compute the smoothing covariances → standard deviations
 Ct_smooth_list <- dlmSvd2var(smthLL2S$U.S, smthLL2S$D.S)
 var_level      <- sapply(Ct_smooth_list, function(mat) mat[1,1])  # length T+1
 sd_level       <- sqrt(var_level)[-1]                             # drop init → length T
 
-# 4. Build 95% bands
-upper95_smth <- level_smth + 1.96 * sd_level
-lower95_smth <- level_smth - 1.96 * sd_level
+# 4. Build 95% credible intervals via Forward Filtering Backward Sampling (FFBS)
+  # 4.a.Running the Kalman filter
 
-# 5. Time index
+modFilt <- dlmFilter(ts_gistemp, modLL2S)
+
+  # 4.b. backward‐sample many smooth draws of the _level_ (state component 1)
+set.seed(123)
+n.sims <- 1000
+
+sims.level <- replicate(
+  n.sims,
+  {
+    full.draw <- dlmBSample(modFilt)       # one draw
+    as.numeric(full.draw[-1, 1])           # drop init, take level                                        QUI IL TOSTAPANE INIZIA A SCALDARSI
+  }
+)
+
+# 4.c. empirical 95% bands
+lower95_sim <- apply(sims.level, 1, quantile, probs = 0.025)
+upper95_sim <- apply(sims.level, 1, quantile, probs = 0.975)
+
+# 5. Time index (same as before)
 time_idx <- seq(
-  from       = start(ts_gistemp)[1] + (start(ts_gistemp)[2]-1)/12,
-  by         = 1/12,
-  length.out = length(ts_gistemp)
+                from = start(ts_gistemp)[1] + (start(ts_gistemp)[2]-1)/12,
+                by   = 1/12,
+                length.out = length(ts_gistemp)
 )
 
-# 6. Data frame
 df_smth <- data.frame(
-  Time       = time_idx,
-  Anomaly    = as.numeric(ts_gistemp),
-  Level_smth = level_smth,
-  Upper95    = upper95_smth,
-  Lower95    = lower95_smth
+                      Time       = time_idx,
+                      Anomaly    = as.numeric(ts_gistemp),
+                      Level_smth = level_smth,
+                      Upper95    = upper95_sim,
+                      Lower95    = lower95_sim
 )
 
-# 7. Plot
+# 6. Plot
 ggplot(df_smth, aes(x = Time)) +
   geom_line(aes(y = Anomaly),  color = "orange", linewidth = 0.7) +
   geom_line(aes(y = Level_smth), color = "steelblue", linewidth = 0.5) +
@@ -250,6 +268,7 @@ ggplot(df_smth, aes(x = Time)) +
     plot.title    = element_text(size = 16, face = "bold"),
     plot.subtitle = element_text(size = 12, face = "italic")
   )
+
 ```
 
 ### 2.2.a Evaluating the model
@@ -283,7 +302,7 @@ Box.test(std_resid, type = "Ljung-Box", lag = 20)
 ```{r}
 #| label: Parameter uncertainty
 
-# 1. MLE with Hessian (ATTENTO CHE CI METTE UN BOTTO, VALUTIAMO SE FARE SU R ONLINE CHE QUI IL TOSTAPANE SI FONDE - STEFANO & TOSTAPANE)
+# 1. MLE with Hessian                                   (ATTENTO CHE CI METTE UN BOTTO, VALUTIAMO SE FARE SU R ONLINE CHE QUI IL TOSTAPANE SI FONDE - STEFANO)
 fit_hess <- dlmMLE(ts_gistemp, parm = init, build = buildLL2S, hessian = TRUE)
 
 # 2. Extract log‐parameters & invert Hessian
@@ -321,16 +340,38 @@ cat("logLik =", logLik, "\nAIC =", AIC, "\nBIC =", BIC, "\n")
 ```{r}
 #| label: Model fit comparison with pure LLT
 
-fitLL2 <- dlmMLE(ts_gistemp, parm=init, build=buildLL2) 
+buildLL2 <- function(par) {
+  V      <- exp(par[1])
+  W_mu   <- exp(par[2])
+  W_beta <- exp(par[3])
+  # second-order polynomial → level + slope
+  dlmModPoly(order = 2,
+             dV = V,
+             dW = c(W_mu, W_beta))
+}
+
+# 2. Initial values (only 3 parameters now)
+initLL2 <- log(c(
+  var(ts_gistemp),         # V
+  var(ts_gistemp)/100,     # W_mu
+  var(ts_gistemp)/1000     # W_beta
+))
+
+# 3. Fit it
+fitLL2  <- dlmMLE(ts_gistemp, parm = init, build = buildLL2)
+modLL2  <- buildLL2(fitLL2$par)
+
 logLik2 <- -fitLL2$value
 p2      <- length(fitLL2$par)
 AIC2    <- -2*logLik2 + 2*p2
 BIC2    <- -2*logLik2 + log(length(ts_gistemp))*p2
+
+cat("logLik =", logLik2, "\nAIC =", AIC2, "\nBIC =", BIC2, "\n")
 cat("ΔAIC =",  AIC - AIC2,  "   ΔBIC =", BIC - BIC2)
 ```
 
 ```{r}
-#| label: Forecast‐performance on a hold‐out
+#| label: Forecast‐performance on a hold‐out | Traditional method
 
 # (a) Define training sample ending December 2014
 n_train   <- length(ts_gistemp) - 120
@@ -360,7 +401,6 @@ cat("RMSE =", round(RMSE,3),
     " 95% CI coverage =", round(coverage*100,1), "%\n")
 ```
 
-
 # Task 3 \| GHCN: Weather prediction
 
 The dataset includes data along space (several stations) and time. Typical aspects of interest are spatial interpolations (at a fixed time) or, in our case, DLM models for spatio-temporal data, considering temperature over time for multiple stations (say 2, for simplicity). You are welcome to explore this direction. However, to keep your workload lighter, here is our suggestion for your possible analysis, focusing only on one station, namely `San Francisco Downtown`.
@@ -375,17 +415,35 @@ N.B.: You need to divide columns 7, 8, and 9 to obtain temperatures (`TMIN`, `TM
 
 Explore the use of Dynamic Linear Models to obtain short term temperature predictions. Evaluate the models based on their interpretability and the quality of their predictions.
 
-Namely, consider the bivariate time series of minimum and maximum temperature, \[ Y_t =
+Namely, consider the bivariate time series of minimum and maximum temperature,
 
-\begin{bmatrix}
-T_{\min,t} \\[4pt]
-T_{\max,t}
-\end{bmatrix}
+$$
+Y_t = 
+\begin{bmatrix}T_{\min,t} \\[4pt]T_{\max,t}\end{bmatrix}
+$$
 
-\] and explore the following models.
+and explore the following models.
 
 ### 3.2.(a) Independent random walk plus noise models
 
+$$
+\begin{aligned}\mathbf{Y}_t &= \boldsymbol{\theta}_t + \mathbf{v}_t,   &\mathbf{v}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{V}),\\\boldsymbol{\theta}_t &= \boldsymbol{\theta}_{t-1} + \mathbf{w}_t,   &\mathbf{w}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{W}),\end{aligned}
+$$
+
+where $(\boldsymbol{\theta}_t = [\theta{1,t},,\theta{2,t}]^\top)$ is the latent state at time $(t)$, and $(\mathbf{W})$ and $(\mathbf{V})$ are diagonal:
+
+$$
+\mathbf{W} =\begin{bmatrix}
+\sigma^2_{w,1} & 0\\
+0 & \sigma^2_{w,2}
+\end{bmatrix}, \qquad \mathbf{V} =\begin{bmatrix}
+\sigma^2_{v,1} & 0\\
+0 & \sigma^2_{v,2}
+\end{bmatrix}.
+$$
+
 ### 3.2.(b) “Seemingly unrelated” random walk plus noise models (V diagonal and W full)
+
+
 
 ### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
