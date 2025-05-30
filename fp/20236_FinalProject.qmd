@@ -441,9 +441,336 @@ $$
 0 & \sigma^2_{v,2}
 \end{bmatrix}.
 $$
+> Stefano
+
+```{r}
+#| label: 1. Builder: log‐parameters = log(c(V1, V2, W1, W2))
+#| 
+buildIndRWNoise <- function(par) {
+  V1 <- exp(par[1])
+  V2 <- exp(par[2])
+  W1 <- exp(par[3])
+  W2 <- exp(par[4])
+  
+  # independent two‐dimensional random‐walk + noise
+  mod_rw <- dlm(
+    FF = diag(2),
+    V  = diag(c(V1, V2)),
+    GG = diag(2),
+    W  = diag(c(W1, W2)),
+    m0 = rep(0, 2),
+    C0 = 1e7 * diag(2)
+  )
+  mod_rw
+}
+```
+
+```{r}
+#| label: 2. Obtaining the MLE estimates
+
+# initial guesses: obs‐var = var(y), rw‐var = var(diff(y))
+y       <- cbind(ts_tmin, ts_tmax)
+init_par <- log(c(
+  var(y[,1], na.rm=TRUE), 
+  var(y[,2], na.rm=TRUE), 
+  var(diff(y[,1]),  na.rm=TRUE), 
+  var(diff(y[,2]),  na.rm=TRUE)
+))
+
+fitInd <- dlmMLE(
+  y     = y,
+  parm  = init_par,
+  build = buildIndRWNoise,
+  lower = rep(-20, 4),  # keep logs in a reasonable range
+  upper = rep( 20, 4)
+)
+
+modInd <- buildIndRWNoise(fitInd$par)
+```
+
+```{r}
+#| label: 3. Filtering and smoothing
+
+filtInd  <- dlmFilter(y, modInd)
+smthInd  <- dlmSmooth(filtInd)
+
+# extract smoothed states (drop the t=0 initialization)
+s_all    <- smthInd$s[-1, ]        # T×2 matrix: columns = (θ₁,t, θ₂,t)
+tmin_smth <- s_all[, 1]            # smoothed θ₁,t for Tmin
+tmax_smth <- s_all[, 2]            # smoothed θ₂,t for Tmax
+
+# retrieve estimated noise variances
+V_est <- modInd$V
+W_est <- modInd$W
+
+cat("Estimated observation variances (V):\n")
+print(V_est)
+cat("Estimated state‐innovation variances (W):\n")
+print(W_est)
+```
+
+```{r}
+#| fig-width: 12
+#| fig-height: 12
+
+# 1. Compute smoothing covariances → standard deviations
+Ct_list    <- dlmSvd2var(smthInd$U.S, smthInd$D.S)
+var_tmin   <- sapply(Ct_list, function(mat) mat[1,1])
+sd_tmin    <- sqrt(var_tmin)[-1]
+var_tmax   <- sapply(Ct_list, function(mat) mat[2,2])
+sd_tmax    <- sqrt(var_tmax)[-1]
+
+# 2. Build 95% credible intervals via FFBS
+set.seed(123)
+n.sims     <- 50                                                                # Questo lo aumentiamo più tardi, senò ci mette troppo
+sims_array <- replicate(
+  n.sims,
+  {
+    fd <- dlmBSample(filtInd)
+    rbind(
+      tmin = as.numeric(fd[-1, 1]),
+      tmax = as.numeric(fd[-1, 2])
+    )
+  },
+  simplify = "array"
+)
+
+lower95_tmin <- apply(sims_array["tmin", , ], 1, quantile, probs = 0.025)
+upper95_tmin <- apply(sims_array["tmin", , ], 1, quantile, probs = 0.975)
+lower95_tmax <- apply(sims_array["tmax", , ], 1, quantile, probs = 0.025)
+upper95_tmax <- apply(sims_array["tmax", , ], 1, quantile, probs = 0.975)
+
+# 3. Time index for daily series
+time_idx <- seq(
+  from       = start(ts_tmin)[1] + (start(ts_tmin)[2] - 1) / 365,
+  by         = 1/365,
+  length.out = length(ts_tmin)
+)
+
+# 4. Prepare data frame for plotting
+df_plot <- data.frame(
+  Time     = rep(time_idx, 2),
+  Observed = c(as.numeric(ts_tmin),    as.numeric(ts_tmax)),
+  Smoothed = c(smthInd$s[-1,1],        smthInd$s[-1,2]),
+  Lower95  = c(lower95_tmin,           lower95_tmax),
+  Upper95  = c(upper95_tmin,           upper95_tmax),
+  Series   = rep(c("Tmin", "Tmax"), each = length(time_idx))
+)
+
+# 5. Plot with facets
+library(ggplot2)
+
+ggplot(df_plot, aes(x = Time)) +
+  geom_line(aes(y = Observed), color = "orange",    linewidth = 0.7) +
+  geom_line(aes(y = Smoothed), color = "steelblue", linewidth = 0.5) +
+  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
+              fill = "steelblue", alpha = 0.2) +
+  facet_wrap(~Series, ncol = 1, scales = "free_y") +
+  labs(
+    title    = "Smoothed Random‐Walk Levels for Tmin & Tmax",
+    subtitle = "95% credible intervals around the smoothed θ_t",
+    x        = "Year",
+    y        = "Temperature (°C)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+#### 3.2.(a).(i) Evaluating the model
+
+```{r}
+#| label: Residual diagnostics
+#| fig-width: 12
+#| fig-height: 12
+
+# (a) raw and standardized one‐step–ahead errors
+raw_resid <- residuals(filtInd, type = "raw")
+std_resid <- residuals(filtInd, type = "standardized", sd = FALSE)
+
+# (b) Plot standardized residuals over time
+par(mfrow = c(2,1))
+ts.plot(std_resid[,1],
+        ylab = "Std. Residuals (Tmin)",
+        main = "Standardized One-step-Ahead Errors: Tmin")
+abline(h = c(-2,2), col = "firebrick", lty = 2)
+ts.plot(std_resid[,2],
+        ylab = "Std. Residuals (Tmax)",
+        main = "Standardized One-step-Ahead Errors: Tmax")
+abline(h = c(-2,2), col = "firebrick", lty = 2)
+
+# (c) ACF to check for remaining autocorrelation
+acf(std_resid[,1], main = "ACF of Std. Residuals: Tmin")
+acf(std_resid[,2], main = "ACF of Std. Residuals: Tmax")
+
+# (d) Histogram + normal curve
+par(mfrow = c(2,1))
+hist(std_resid[,1], freq = FALSE,
+     main = "Histogram of Std. Residuals: Tmin",
+     xlab = "Std. Residual")
+curve(dnorm(x), add = TRUE)
+hist(std_resid[,2], freq = FALSE,
+     main = "Histogram of Std. Residuals: Tmax",
+     xlab = "Std. Residual")
+curve(dnorm(x), add = TRUE)
+
+# (e) QQ‐plot
+par(mfrow = c(2,1))
+qqnorm(std_resid[,1], main = "QQ‐plot: Std. Residuals (Tmin)"); qqline(std_resid[,1])
+qqnorm(std_resid[,2], main = "QQ‐plot: Std. Residuals (Tmax)"); qqline(std_resid[,2])
+
+# (f) Ljung–Box test for whiteness
+lb_tmin <- Box.test(std_resid[,1], type = "Ljung-Box", lag = 20)
+lb_tmax <- Box.test(std_resid[,2], type = "Ljung-Box", lag = 20)
+print(lb_tmin)
+print(lb_tmax)
+```
+
+```{r}
+#| label: Parameter uncertainty
+
+# 1. MLE with Hessian (may be slow)
+fit_hess <- dlmMLE(
+  y     = y,
+  parm  = init_par,
+  build = buildIndRWNoise,
+  hessian = TRUE
+)
+
+# 2. Extract log‐parameters & invert Hessian
+log_par  <- fit_hess$par
+vcov_log <- solve(fit_hess$hessian)
+se_log   <- sqrt(diag(vcov_log))
+
+# 3. Summary table
+param_tab <- data.frame(
+  param     = c("V1", "V2", "W1", "W2"),
+  log_est   = log_par,
+  log_se    = se_log
+)
+param_tab$est     <- exp(param_tab$log_est)
+param_tab$lower95 <- exp(param_tab$log_est - 1.96 * param_tab$log_se)
+param_tab$upper95 <- exp(param_tab$log_est + 1.96 * param_tab$log_se)
+print(param_tab)
+```
+
+```{r}
+#| label: Model fit: log‐likelihood, AIC, BIC
+
+logLik <- -fit_hess$value
+p      <- length(log_par)
+n      <- nrow(y)
+
+AIC <- -2*logLik + 2*p
+BIC <- -2*logLik + log(n)*p
+
+cat("logLik =", logLik, 
+    "\nAIC    =", AIC, 
+    "\nBIC    =", BIC, "\n")
+```
+
+
+```{r}
+#| label: Forecast performance (hold‐out)
+
+# (a) Define training sample ending 1 year (~365 days) before end
+n_train <- nrow(y) - 365
+y_train <- y[1:n_train, , drop = FALSE]
+
+# (b) Re‐fit on training data
+fit_train  <- dlmMLE(y_train, parm = init_par, build = buildIndRWNoise)
+mod_train  <- buildIndRWNoise(fit_train$par)
+filt_train <- dlmFilter(y_train, mod_train)
+
+# (c) Forecast next 365 days
+fc      <- dlmForecast(filt_train, nAhead = 365)
+y_true  <- y[(n_train+1):nrow(y), ]
+y_pred  <- fc$f
+Q_list  <- fc$Q
+
+# prediction intervals
+y_lo <- matrix(NA, nrow = 365, ncol = 2)
+y_hi <- matrix(NA, nrow = 365, ncol = 2)
+for(i in 1:365) {
+  se_pred     <- sqrt(diag(Q_list[[i]]))
+  y_lo[i, ]   <- y_pred[i, ] + qnorm(0.025) * se_pred
+  y_hi[i, ]   <- y_pred[i, ] + qnorm(0.975) * se_pred
+}
+
+# (d) Compute accuracy metrics by series
+errors   <- y_true - y_pred
+rmse     <- sqrt(colMeans(errors^2))
+mae      <- colMeans(abs(errors))
+coverage <- colMeans((y_true >= y_lo) & (y_true <= y_hi)) * 100
+
+cat("Series   RMSE    MAE    95% CI coverage\n")
+cat(sprintf("Tmin   %.3f  %.3f   %.1f%%\n", rmse[1], mae[1], coverage[1]))
+cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse[2], mae[2], coverage[2]))
+```
+
+
+
 
 ### 3.2.(b) “Seemingly unrelated” random walk plus noise models (V diagonal and W full)
 
+$$
+\begin{aligned}
+\mathbf{Y}_t &= \boldsymbol{\theta}_t + \mathbf{v}_t, 
+  &\mathbf{v}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{V}),\\
+\boldsymbol{\theta}_t &= \boldsymbol{\theta}_{t-1} + \mathbf{w}_t, 
+  &\mathbf{w}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{W}),
+\end{aligned}
+$$
+where
 
+$$
+\mathbf{W} = 
+\begin{bmatrix}
+\sigma^2_{w,11} & \sigma^2_{w,12}\\[3pt]
+\sigma^2_{w,21} & \sigma^2_{w,22}
+\end{bmatrix},
+\qquad
+\mathbf{V} = 
+\begin{bmatrix}
+\sigma^2_{v,11} & 0\\
+0 & \sigma^2_{v,22}
+\end{bmatrix}.
+$$
 
 ### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
+
+$$
+\mathbf{Y}_t = \mathbf{F}\,\boldsymbol{\theta}_t + \mathbf{v}_t,\quad
+\mathbf{v}_t \sim \mathcal{N}(\mathbf{0},\,\mathbf{V}),
+$$
+$$
+\boldsymbol{\theta}_t = \boldsymbol{\theta}_{t-1} + 
+\begin{pmatrix}
+0 \\[4pt]
+w_t
+\end{pmatrix},
+\quad
+w_t \sim \mathcal{N}(0,\sigma_w^2),
+$$
+
+where
+
+$$
+\boldsymbol{\theta}_t =
+\begin{bmatrix}
+1 \\[4pt]
+\xi_t
+\end{bmatrix},\quad
+\mathbf{F} =
+\begin{bmatrix}
+\alpha_1 & \beta \\[6pt]
+\alpha_2 & \frac{1}{\beta}
+\end{bmatrix},\quad
+\mathbf{V} =
+\begin{bmatrix}
+\sigma^2_{v,11} & 0\\[4pt]
+0 & \sigma^2_{v,22}
+\end{bmatrix}.
+$$
