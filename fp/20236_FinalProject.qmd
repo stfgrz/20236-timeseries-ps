@@ -14,7 +14,6 @@ library(forecast)
 
 library(mvtnorm)
 
-
 library(ggplot2)
 library(ggfortify)
 
@@ -774,3 +773,230 @@ $$
 0 & \sigma^2_{v,22}
 \end{bmatrix}.
 $$
+The parameters $\alpha_1$, $\alpha_2$ and $\beta$ should be determined via MLE.
+
+
+```{r}
+#| label: 1. Builder: log‐parameters = c(α1, α2, logβ, logσv1, logσv2, logσw)
+buildCF <- function(par) {
+  # raw parameters
+  alpha1  <- par[1]
+  alpha2  <- par[2]
+  # positivity constraints
+  beta     <- exp(par[3])
+  sigma_v1 <- exp(par[4])
+  sigma_v2 <- exp(par[5])
+  sigma_w  <- exp(par[6])
+  
+  # Observation matrix F
+  FF <- matrix(c(
+    alpha1,     beta,
+    alpha2, 1 / beta
+  ), nrow = 2, byrow = TRUE)
+  
+  # Observation noise covariance V
+  V  <- diag(c(sigma_v1^2, sigma_v2^2))
+  
+  # State evolution G = identity, with W only on second component
+  GG <- diag(2)
+  W  <- diag(c(0, sigma_w^2))
+  
+  # Initial state mean m0 = [1, 0]′, large variance on ξ₀
+  m0 <- c(1, 0)
+  C0 <- diag(c(0, 1e7))
+  
+  dlm(
+    m0 = m0, C0 = C0,
+    FF = FF, V = V,
+    GG = GG, W = W
+  )
+}
+```
+
+```{r}
+#| label: 2. Obtaining the MLE estimates
+# stack Tmin and Tmax
+y      <- cbind(ts_tmin, ts_tmax)
+
+# sensible initials:
+# α’s ≈ 0, β ≈ 1, σv ≈ sd(y), σw ≈ sd(diff of common factor)
+init_par <- c(
+  alpha1 = 0,
+  alpha2 = 0,
+  logβ    = log(1),
+  logσv1  = log(sd(y[,1], na.rm=TRUE)),
+  logσv2  = log(sd(y[,2], na.rm=TRUE)),
+  logσw   = log(sd(diff(y[,1] + y[,2])/2, na.rm=TRUE))
+)
+
+fitCF <- dlmMLE(
+  y     = y,
+  parm  = init_par,
+  build = buildCF,
+  lower = c(-Inf, -Inf, -10, -10, -10, -10),
+  upper = c( Inf,  Inf,  10,  10,  10,  10)
+)
+if (fitCF$convergence != 0) stop("MLE did not converge")
+
+modCF <- buildCF(fitCF$par)
+```
+
+```{r}
+#| label: 3. Filtering and smoothing
+filtCF  <- dlmFilter(y, modCF)
+smthCF  <- dlmSmooth(filtCF)
+
+# extract smoothed states (drop t=0)
+s_all    <- smthCF$s[-1, ]    # T × 2 matrix
+xi_smth  <- s_all[, 2]        # the latent ξₜ
+
+# retrieve estimated parameters
+FF_est <- modCF$FF
+V_est  <- modCF$V
+W_est  <- modCF$W
+
+cat("Estimated F matrix:\n")
+print(FF_est)
+cat("\nEstimated observation noise V:\n")
+print(V_est)
+cat("\nEstimated state‐innovation noise W:\n")
+print(W_est)
+
+# optional: plot the latent factor
+ts.plot(xi_smth, main="Smoothed latent factor ξₜ")
+```
+
+#### 3.2.(c).(i) Evaluating the model
+
+```{r}
+#| label: Residual diagnostics: CF model
+#| fig-width: 16
+#| fig-height: 16
+
+# (a) raw and standardized one‐step–ahead errors
+raw_resid_CF <- residuals(filtCF, type = "raw")
+std_resid_CF <- residuals(filtCF, type = "standardized", sd = FALSE)
+
+# (b) Plot standardized residuals over time
+par(mfrow = c(2,1))
+ts.plot(std_resid_CF[,1],
+        ylab = "Std. Residuals (Tmin)",
+        main = "CF Model: Standardized One-step-Ahead Errors: Tmin")
+abline(h = c(-2,2), col = "firebrick", lty = 2)
+ts.plot(std_resid_CF[,2],
+        ylab = "Std. Residuals (Tmax)",
+        main = "CF Model: Standardized One-step-Ahead Errors: Tmax")
+abline(h = c(-2,2), col = "firebrick", lty = 2)
+
+# (c) ACF to check for remaining autocorrelation
+acf(std_resid_CF[,1], main = "CF Model: ACF of Std. Residuals: Tmin")
+acf(std_resid_CF[,2], main = "CF Model: ACF of Std. Residuals: Tmax")
+
+# (d) Histogram + normal curve
+par(mfrow = c(2,1))
+hist(std_resid_CF[,1], freq = FALSE,
+     main = "CF Model: Histogram of Std. Residuals: Tmin",
+     xlab = "Std. Residual")
+curve(dnorm(x), add = TRUE)
+hist(std_resid_CF[,2], freq = FALSE,
+     main = "CF Model: Histogram of Std. Residuals: Tmax",
+     xlab = "Std. Residual")
+curve(dnorm(x), add = TRUE)
+
+# (e) QQ‐plot
+par(mfrow = c(2,1))
+qqnorm(std_resid_CF[,1], main = "CF Model: QQ‐plot: Std. Residuals (Tmin)"); qqline(std_resid_CF[,1])
+qqnorm(std_resid_CF[,2], main = "CF Model: QQ‐plot: Std. Residuals (Tmax)"); qqline(std_resid_CF[,2])
+
+# (f) Ljung–Box test for whiteness
+lb_tmin_CF <- Box.test(std_resid_CF[,1], type = "Ljung-Box", lag = 20)
+lb_tmax_CF <- Box.test(std_resid_CF[,2], type = "Ljung-Box", lag = 20)
+print(lb_tmin_CF)
+print(lb_tmax_CF)
+```
+
+```{r}
+#| label: Parameter uncertainty: CF model
+
+# 1. MLE with Hessian (slower)
+fitCF_hess <- dlmMLE(
+  y       = y,
+  parm    = init_par,
+  build   = buildCF,
+  hessian = TRUE
+)
+
+# 2. Extract estimated parameters and their SEs on the working scale
+par_work   <- fitCF_hess$par
+vcov_work  <- solve(fitCF_hess$hessian)
+se_work    <- sqrt(diag(vcov_work))
+
+# 3. Construct summary table
+param_tab_CF <- data.frame(
+  param      = c("alpha1", "alpha2", "logβ", "logσv1", "logσv2", "logσw"),
+  estimate   = par_work,
+  se         = se_work,
+  lower95    = par_work - 1.96 * se_work,
+  upper95    = par_work + 1.96 * se_work
+)
+print(param_tab_CF)
+```
+
+```{r}
+#| label: Model fit: CF model log‐likelihood, AIC, BIC
+
+logLik_CF <- -fitCF_hess$value
+p_CF      <- length(par_work)
+n_CF      <- nrow(y)
+
+AIC_CF <- -2 * logLik_CF + 2 * p_CF
+BIC_CF <- -2 * logLik_CF + log(n_CF) * p_CF
+
+cat("CF model\n",
+    "logLik =", round(logLik_CF,2), 
+    "\nAIC    =", round(AIC_CF,2), 
+    "\nBIC    =", round(BIC_CF,2), "\n")
+```
+
+```{r}
+#| label: Forecast performance (hold‐out): CF model
+
+# (a) Training sample ends 365 days before end
+n_train_CF <- nrow(y) - 365
+y_train_CF <- y[1:n_train_CF, , drop = FALSE]
+
+# (b) Re‐fit CF model on training data
+fit_train_CF  <- dlmMLE(y_train_CF, parm = init_par, build = buildCF)
+mod_train_CF  <- buildCF(fit_train_CF$par)
+filt_train_CF <- dlmFilter(y_train_CF, mod_train_CF)
+
+# (c) Forecast next 365 days
+fc_CF     <- dlmForecast(filt_train_CF, nAhead = 365)
+y_true_CF <- y[(n_train_CF+1):nrow(y), ]
+y_pred_CF <- fc_CF$f
+Q_list_CF <- fc_CF$Q
+
+# prediction intervals
+y_lo_CF <- y_hi_CF <- matrix(NA, nrow = 365, ncol = 2)
+for(i in 1:365) {
+  se_pred     <- sqrt(diag(Q_list_CF[[i]]))
+  y_lo_CF[i,] <- y_pred_CF[i,] + qnorm(0.025) * se_pred
+  y_hi_CF[i,] <- y_pred_CF[i,] + qnorm(0.975) * se_pred
+}
+
+# (d) Compute accuracy metrics by series
+errors_CF  <- y_true_CF - y_pred_CF
+rmse_CF    <- sqrt(colMeans(errors_CF^2))
+mae_CF     <- colMeans(abs(errors_CF))
+coverage_CF<- colMeans((y_true_CF >= y_lo_CF) & (y_true_CF <= y_hi_CF)) * 100
+
+cat("CF model forecast performance:\n")
+cat(sprintf("Series   RMSE    MAE    95%% CI coverage\n"))
+cat(sprintf("Tmin   %.3f  %.3f   %.1f%%\n", rmse_CF[1], mae_CF[1], coverage_CF[1]))
+cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse_CF[2], mae_CF[2], coverage_CF[2]))
+```
+
+
+
+
+
