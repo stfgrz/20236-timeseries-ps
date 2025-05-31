@@ -923,7 +923,6 @@ ggplot(df_melt, aes(x = time, y = Value,
   )
 ```
 
-
 ### 3.2.(c) Random walks plus noise driven by a “latent factor” (a common state process)
 
 $$
