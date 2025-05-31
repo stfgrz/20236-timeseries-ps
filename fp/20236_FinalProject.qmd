@@ -174,6 +174,251 @@ Consider the seasonality adjusted time-series from the GISTEMP data.
 
 Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
 
+### Inizio codice HMM
+
+setwd("C:/Users/USER/Desktop/TS giocarro")
+
+data <- read.csv("gistemp.txt", header = TRUE) 
+monthly_data <- data[, 2:13] # Extract columns for Jan to Dec 
+ts_data <- ts(as.vector(t(monthly_data)), start = c(1880, 1), frequency = 12)
+
+plot(ts_data,
+     main = "Original Monthly Temperature Series (GISTEMP)",
+     ylab = "Temperature (°C)",
+     xlab = "Time",
+     col = "darkblue",
+     lwd = 1)
+
+# Decompose the time series (additive and multiplicative)
+decompose_a_data <- decompose(ts_data, type = "additive")
+decompose_m_data <- decompose(ts_data, type = "multiplicative")
+
+# STL decomposition (more flexible)
+stl_data <- stl(ts_data, s.window = "periodic")
+
+# Extract seasonal components
+seasonal_da <- decompose_a_data$seasonal # This is a time series object
+seasonal_dm <- decompose_m_data$seasonal # This is a time series object
+seasonal_stl <- stl_data$time.series[, "seasonal"]
+
+# Plot the decompositions
+plot(decompose_a_data)
+plot(decompose_m_data)
+plot(stl_data)
+
+#We deseasonalize the time series
+deseasoned_stl <- ts_data - seasonal_stl
+plot(deseasoned_stl)
+
+
+# 1. Specify the HMM with 2 states
+hmm_2 <- depmix(deseasoned_stl ~ 1, 
+                family = gaussian(), 
+                nstates = 2, 
+                data = data.frame(deseasoned_stl))
+
+# 2. Fit the model
+set.seed(123)
+fmodel <- fit(hmm_2, verbose = FALSE)
+
+# 3. Extract estimated mean and standard deviation for ALL hidden states
+fmodel@response[[1]][[1]]@parameters$coefficients
+fmodel@response[[1]][[1]]@parameters$sd
+fmodel@response[[2]][[1]]@parameters$coefficients
+fmodel@response[[2]][[1]]@parameters$sd
+
+# 4. Compute standard errors
+MLEse <- standardError(fmodel)
+round(MLEse$par,3)
+
+# 1. Specify the HMM with 3 states
+hmm_3 <- depmix(deseasoned_stl ~ 1, 
+                family = gaussian(), 
+                nstates = 3, 
+                data = data.frame(deseasoned_stl))
+
+# 2. Fit the model
+set.seed(123)
+fmodel3 <- fit(hmm_3, verbose = FALSE)
+
+
+fmodel3@response[[1]][[1]]@parameters$coefficients
+fmodel3@response[[1]][[1]]@parameters$sd
+fmodel3@response[[2]][[1]]@parameters$coefficients
+fmodel3@response[[2]][[1]]@parameters$sd
+fmodel3@response[[3]][[1]]@parameters$coefficients
+fmodel3@response[[3]][[1]]@parameters$sd
+
+# 4. Compute standard errors
+MLEse3 <- standardError(fmodel3)
+round(MLEse3$par,3)
+
+#Get the estimated state for each timestep
+estStates <- posterior(fmodel)
+
+plot(time(deseasoned_stl), estStates$state, 
+     type = "l", 
+     ylab = "Estimated State", 
+     xlab = "Time", 
+     main = "Estimated Hidden States over Time (2-state HMM)",
+     col = "darkred", 
+     lwd = 1.5)
+
+# Step 1: Get estimated states
+estStates <- posterior(fmodel)
+
+# Step 2: Assign state numbers to i and ii
+i <- estStates$state[1]
+ii <- if (i == 1) 2 else 1
+
+# Step 3: Get the estimated means for both states
+estMean1 <- fmodel@response[[i]][[1]]@parameters$coefficients
+estMean2 <- fmodel@response[[ii]][[1]]@parameters$coefficients
+
+# Step 4: Create a vector of means based on state assignments
+estMeans <- rep(estMean1, length(deseasoned_stl))
+estMeans[estStates$state == ii] <- estMean2
+
+# Step 5: Plot original series and estimated means
+plot(deseasoned_stl,
+     main = "Deseasonalized Data and HMM Estimated Means",
+     ylab = "Temperature Anomaly",
+     xlab = "Time",
+     col = "gray")
+
+# Add estimated means as points
+points(time(deseasoned_stl), estMeans, col = "blue", cex = 0.3)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Crea un data frame con la serie e lo stato stimato
+results_df <- data.frame(
+  time_index = as.numeric(time(deseasoned_stl)),
+  sample_trajectory = as.numeric(deseasoned_stl),
+  estimated_state = estStates$state
+) %>%
+  pivot_longer(cols = c("sample_trajectory", "estimated_state"), 
+               names_to = "variable", values_to = "value")
+
+# Crea il grafico
+plotobj <- ggplot(results_df, aes(x = time_index, y = value)) +
+  geom_line() +
+  facet_wrap(~variable, scales = "free", ncol = 1) +
+  theme_minimal() +
+  labs(title = "HMM States and Deseasonalized Series", x = "Time", y = "Value")
+
+# Mostra il grafico
+plot(plotobj)
+
+# Load packages
+library(ggplot2)
+library(dplyr)
+
+# Get time and values
+time_vals <- as.numeric(time(deseasoned_stl))
+values <- as.numeric(deseasoned_stl)
+states <- posterior(fmodel)$state
+
+# Create data frame
+df <- data.frame(
+  time = time_vals,
+  value = values,
+  state = factor(states)
+)
+
+# Optional: Fit regression models by state
+model1 <- lm(value ~ time, data = df %>% filter(state == 1))
+model2 <- lm(value ~ time, data = df %>% filter(state == 2))
+
+# Create plot with confidence intervals
+p <- ggplot(df, aes(x = time, y = value, color = state, fill = state)) +
+  geom_point(alpha = 0.4, size = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, linetype = "solid", linewidth = 1.2, alpha = 0.2) +
+  labs(title = "Linear Trends by Hidden State (HMM) with Confidence Intervals",
+       x = "Time", y = "Deseasonalized Temperature Anomaly") +
+  theme_minimal() +
+  scale_color_manual(values = c("steelblue", "darkorange")) +
+  scale_fill_manual(values = c("steelblue", "darkorange"))
+
+# Show plot
+print(p)
+
+# Prepare the time variable
+time_vals <- as.numeric(time(deseasoned_stl))
+
+# Combine time and deseasoned series into a dataframe
+df <- data.frame(
+  temp = as.numeric(deseasoned_stl),
+  time = time_vals
+)
+
+# Specify HMM with linear trend in each state: response ~ time
+hmm_linear <- depmix(temp ~ time, 
+                     family = gaussian(), 
+                     nstates = 2, 
+                     data = df)
+
+# Fit the model
+set.seed(123)
+fmodel_linear <- fit(hmm_linear, verbose = FALSE)
+
+# Extract estimated intercepts and slopes
+coef1 <- fmodel_linear@response[[1]][[1]]@parameters$coefficients  # State 1
+coef2 <- fmodel_linear@response[[2]][[1]]@parameters$coefficients  # State 2
+
+# Optional: view
+coef1  # (Intercept and Slope for State 1)
+coef2  # (Intercept and Slope for State 2)
+
+# Get posterior state assignments
+estStates <- posterior(fmodel_linear)
+
+# Compute fitted values using state-specific regression
+fitted_vals <- numeric(length(df$temp))
+fitted_vals[estStates$state == 1] <- coef1[1] + coef1[2] * df$time[estStates$state == 1]
+fitted_vals[estStates$state == 2] <- coef2[1] + coef2[2] * df$time[estStates$state == 2]
+
+# Plot original series with fitted trend lines
+plot(df$time, df$temp,
+     main = "Deseasonalized Data with State-Dependent Linear Trends",
+     ylab = "Temperature Anomaly", xlab = "Time",
+     type = "l", col = "gray")
+
+lines(df$time, fitted_vals, col = "blue", lwd = 2)
+
+
+# Prepare the time variable
+time_vals <- as.numeric(time(deseasoned_stl))
+
+# Combine time and deseasoned series into a dataframe
+df <- data.frame(
+  temp = as.numeric(deseasoned_stl),
+  time = time_vals
+)
+
+# Specify HMM with linear trend in each state: response ~ time
+hmm_linear3 <- depmix(temp ~ time, 
+                     family = gaussian(), 
+                     nstates = 3, 
+                     data = df)
+
+# Fit the model
+set.seed(123)
+fmodel_linear3 <- fit(hmm_linear3, verbose = FALSE)
+
+# Extract estimated intercepts and slopes
+coef1 <- fmodel_linear3@response[[1]][[1]]@parameters$coefficients  # State 1
+coef2 <- fmodel_linear3@response[[2]][[1]]@parameters$coefficients  # State 2
+coef3 <- fmodel_linear3@response[[3]][[1]]@parameters$coefficients  # State 3
+
+
+# Optional: view
+coef1  # (Intercept and Slope for State 1)
+coef2  # (Intercept and Slope for State 2)
+coef3  # (Intercept and Slope for State 3)
+
 ## 2.2 Dynamic Linear Models
 
 Explore the use of Dynamic Linear Models such as random walk plus noise or locally linear trend to address the presence of acceleration/deceleration in global warming. You can opt to use more structured models (if you choose a model with seasonality, you can use the full time series). Comment on the results, and compare them with the ones obtained using HMMs.
