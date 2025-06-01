@@ -909,7 +909,6 @@ $$
 ```{r}
 #| label: 1. Model‐building function
 
-
 build_SUTSE <- function(par) {
   V <- diag(exp(par[1:2]))
   W <- matrix(c(exp(par[3]), par[4],
@@ -919,9 +918,10 @@ build_SUTSE <- function(par) {
     FF = diag(2), V = V,
     GG = diag(2), W = W,
     m0 = rep(0,2), C0 = diag(1e7,2)
-  )temp <- cbind(Tmin = ts_tmin, Tmax = ts_tmax)
-
+  )
 }
+temp <- cbind(Tmin = ts_tmin, Tmax = ts_tmax)
+
 ```
 
 ```{r}
@@ -949,16 +949,6 @@ y_pred <- temp - res_raw
 
 # standardize residuals 
 res_std <- res_raw / pred_se
-
-
-res_raw <- dropFirst(res_raw)
-pred_se <- dropFirst(pred_se)
-
-# Align temp to match dimensions
-temp_sub <- temp[-1, ]  # drop first obs of temp
-
-# Reconstruct the prediction properly
-y_pred <- temp_sub - res_raw
 
 ```
 
@@ -1009,7 +999,6 @@ colnames(y_pred) <- colnames(temp)
 
 ```{r}
 #| label: 4. Build dataframe for plotting
-
 df <- data.frame(
   time      = as.numeric(time(temp)),
   Tmin      = as.numeric(temp[, "Tmin"]),
@@ -1092,6 +1081,91 @@ ggplot(df_melt, aes(x = time, y = Value,
     panel.grid.minor = element_blank(),
     panel.grid.major = element_line(color = "grey80")
   )
+```
+
+```{r}
+#add credible intervals 95%
+#--- load packages ----------------------------------------------------------
+
+#--- 1) Create df for observed & predicted, subset to 1990–1991 -------------
+df <- data.frame(
+    time       = as.numeric(time(temp)),         # numeric time index for `temp`
+    Tmin       = as.numeric(temp[,"Tmin"]),       # observed Tmin
+    Tmax       = as.numeric(temp[,"Tmax"]),       # observed Tmax
+    Tmin_pred  = as.numeric(y_pred[,"temp.Tmin"]),     # predicted Tmin
+    Tmax_pred  = as.numeric(y_pred[,"temp.Tmax"])      # predicted Tmax
+)
+
+df_sub <- subset(df, time >= 1990 & time <= 1991)
+
+df_melt <- melt(
+    df_sub,
+    id.vars        = "time",
+    variable.name  = "Series_Source",
+    value.name     = "Value"
+) %>%
+    mutate(
+        Series = ifelse(grepl("^Tmin",   Series_Source), "Tmin", "Tmax"),
+        Source = ifelse(grepl("_pred$",  Series_Source), "Estimated", "Original")
+    )
+
+#--- 2) Create df for lower/upper bounds, subset to 1990–1991 --------------
+#    We assume `lower` and `upper` are ts objects with the same time index as `temp`
+#    and with columns "Tmin" and "Tmax".  
+ci_df <- data.frame(
+    time        = as.numeric(time(lower)),
+    Tmin_lower  = as.numeric(lower[,"y_pred.temp.Tmin"]),
+    Tmin_upper  = as.numeric(upper[,"y_pred.temp.Tmin"]),
+    Tmax_lower  = as.numeric(lower[,"y_pred.temp.Tmax"]),
+    Tmax_upper  = as.numeric(upper[,"y_pred.temp.Tmax"])
+)
+
+ci_sub <- subset(ci_df, time >= 1990 & time <= 1991)
+
+# Pivot into long form with columns (time, Series, lower, upper)
+ci_melt <- bind_rows(
+    ci_sub %>% transmute(time, Series = "Tmin",
+                         lower = Tmin_lower, upper = Tmin_upper),
+    ci_sub %>% transmute(time, Series = "Tmax",
+                         lower = Tmax_lower, upper = Tmax_upper)
+)
+
+#--- 3) Plot everything -----------------------------------------------------
+ggplot() +
+    # (a) 95% prediction‐interval ribbon in grey behind the lines
+    geom_ribbon(
+        data = ci_melt,
+        aes(x = time, ymin = lower, ymax = upper),
+        fill  = "grey40",
+        alpha = 0.3
+    ) +
+    # (b) observed vs. predicted lines on top
+    geom_line(
+        data = df_melt,
+        aes(x = time, y = Value,
+            color = Source, linetype = Source),
+        size = 1
+    ) +
+    facet_wrap(~ Series, scales = "free_y", ncol = 1) +
+    scale_color_manual(
+        values = c("Original" = "black", "Estimated" = "firebrick")
+    ) +
+    scale_linetype_manual(
+        values = c("Original" = "solid", "Estimated" = "solid")
+    ) +
+    labs(
+        x     = "Time (year)",
+        y     = "Temperature",
+        title = "Original vs One‐Step‐Ahead DLM (1990–1991) with 95% Intervals"
+    ) +
+    theme_bw(base_size = 14) +
+    theme(
+        legend.position  = "top",
+        strip.text       = element_text(face = "bold", size = 14),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "grey80")
+    )
+
 ```
 
 ### 3.2.(c) Random walks plus noise driven by a "latent factor" (a common state process)
