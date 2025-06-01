@@ -1168,6 +1168,45 @@ ggplot() +
 
 ```
 
+```{r}
+#forecast out of sample
+#| label: Forecast performance (hold‐out)
+
+# (a) Define training sample ending 1 year (~365 days) before end
+n_train <- nrow(temp) - 365
+y_train <- temp[1:n_train, , drop = FALSE]
+
+# (b) Re‐fit on training data
+fit_train  <- dlmMLE(y_train, parm = init_par, build = buildIndRWNoise)
+mod_train  <- buildIndRWNoise(fit_train$par)
+filt_train <- dlmFilter(y_train, mod_train)
+
+# (c) Forecast next 365 days
+fc      <- dlmForecast(filt_train, nAhead = 365)
+y_true  <- y[(n_train+1):nrow(y), ]
+y_pred  <- fc$f
+Q_list  <- fc$Q
+
+# prediction intervals
+y_lo <- matrix(NA, nrow = 365, ncol = 2)
+y_hi <- matrix(NA, nrow = 365, ncol = 2)
+for(i in 1:365) {
+  se_pred     <- sqrt(diag(Q_list[[i]]))
+  y_lo[i, ]   <- y_pred[i, ] + qnorm(0.025) * se_pred
+  y_hi[i, ]   <- y_pred[i, ] + qnorm(0.975) * se_pred
+}
+
+# (d) Compute accuracy metrics by series
+errors   <- y_true - y_pred
+rmse     <- sqrt(colMeans(errors^2))
+mae      <- colMeans(abs(errors))
+coverage <- colMeans((y_true >= y_lo) & (y_true <= y_hi)) * 100
+
+cat("Series   RMSE    MAE    95% CI coverage\n")
+cat(sprintf("Tmin   %.3f  %.3f   %.1f%%\n", rmse[1], mae[1], coverage[1]))
+cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse[2], mae[2], coverage[2]))
+```
+
 ### 3.2.(c) Random walks plus noise driven by a "latent factor" (a common state process)
 
 $$
