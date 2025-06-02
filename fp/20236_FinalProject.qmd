@@ -966,6 +966,8 @@ acf(res_std[,2], main="ACF Std resid: Tmax")
 par(mfrow = c(1,2))
 qqnorm(res_std[,1], main="QQ: Std resid Tmin"); qqline(res_std[,1])
 qqnorm(res_std[,2], main="QQ: Std resid Tmax"); qqline(res_std[,2])
+checkresiduals(res_std[,1])
+checkresiduals(res_std[,2])
 ```
 
 ```{r}
@@ -1169,6 +1171,45 @@ ggplot() +
 ```
 
 ```{r}
+# 1. MLE with Hessian (may be slow)
+fit_hess2 <- dlmMLE(
+  y     = temp,
+  parm  = init.par,
+  build = build_SUTSE,
+  hessian = TRUE
+)
+
+# 2. Extract log‐parameters & invert Hessian
+log_par  <- fit_hess2$par
+vcov_log <- solve(fit_hess2$hessian)
+se_log   <- sqrt(diag(vcov_log))
+
+# 3. Summary table
+param_tab <- data.frame(
+  param     = c("V1", "V2", "W1", "W1-2", "W2"),
+  log_est   = log_par,
+  log_se    = se_log
+)
+param_tab$est     <- exp(param_tab$log_est)
+param_tab$lower95 <- exp(param_tab$log_est - 1.96 * param_tab$log_se)
+param_tab$upper95 <- exp(param_tab$log_est + 1.96 * param_tab$log_se)
+print(param_tab)
+```
+
+```{r}
+logLik <- -fit_hess2$value
+p      <- length(log_par)
+n      <- nrow(temp)
+
+AIC <- -2*logLik + 2*p
+BIC <- -2*logLik + log(n)*p
+
+cat("logLik =", logLik, 
+    "\nAIC    =", AIC, 
+    "\nBIC    =", BIC, "\n")
+```
+
+```{r}
 #forecast out of sample
 #| label: Forecast performance (hold‐out)
 
@@ -1177,13 +1218,13 @@ n_train <- nrow(temp) - 365
 y_train <- temp[1:n_train, , drop = FALSE]
 
 # (b) Re‐fit on training data
-fit_train  <- dlmMLE(y_train, parm = init_par, build = buildIndRWNoise)
-mod_train  <- buildIndRWNoise(fit_train$par)
+fit_train  <- dlmMLE(y_train, parm = init.par, build = build_SUTSE)
+mod_train  <- build_SUTSE(fit_train$par)
 filt_train <- dlmFilter(y_train, mod_train)
 
 # (c) Forecast next 365 days
 fc      <- dlmForecast(filt_train, nAhead = 365)
-y_true  <- y[(n_train+1):nrow(y), ]
+y_true  <- temp[(n_train+1):nrow(temp), ]
 y_pred  <- fc$f
 Q_list  <- fc$Q
 
