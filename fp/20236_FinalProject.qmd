@@ -16,6 +16,7 @@ library(mvtnorm)
 
 library(ggplot2)
 library(ggfortify)
+library(depmixS4)
 
 library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
 library(tinytex)
@@ -239,177 +240,220 @@ Explore the use of Hidden Markov Models to identify the presence of long term te
 #| label: 2-states HMM
 
 # 1. Specify the HMM with 2 states
-
-hmm_2 \<- depmix(ts_gistemp_ds \~ 1, family = gaussian(), nstates = 2, data = data.frame(ts_gistemp_ds))
+hmm_2 <- depmix(ts_gistemp_ds ~ 1,
+                family = gaussian(),
+                nstates = 2,
+                data = data.frame(ts_gistemp_ds))
 
 # 2. Fit the model
-
-set.seed(123) fmodel \<- fit(hmm_2, verbose = FALSE)
+set.seed(123)
+fmodel <- fit(hmm_2, verbose = FALSE)
 
 # 3. Extract estimated mean and standard deviation for ALL hidden states
-
-fmodel\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel\@response\[\[1\]\]\[\[1\]\]@parameters$sd fmodel\@response\[\[2\]\]\[\[1\]\]@parameters$coefficients fmodel\@response\[\[2\]\]\[\[1\]\]@parameters$sd
+fmodel@response[[1]][[1]]@parameters$coefficients
+fmodel@response[[1]][[1]]@parameters$sd
+fmodel@response[[2]][[1]]@parameters$coefficients
+fmodel@response[[2]][[1]]@parameters$sd
 
 # 4. Compute standard errors
-
-MLEse \<- standardError(fmodel) round(MLEse\$par,3)
+MLEse <- standardError(fmodel)
+round(MLEse$par,3)
 ```
 
 ```{r}
 #| label: 3-states HMM
 
 # 1. Specify the HMM with 3 states
-
-hmm_3 \<- depmix(ts_gistemp_ds \~ 1, family = gaussian(), nstates = 3, data = data.frame(ts_gistemp_ds))
+hmm_3 <- depmix(ts_gistemp_ds ~ 1,
+                family = gaussian(),
+                nstates = 3,
+                data = data.frame(ts_gistemp_ds))
 
 # 2. Fit the model
+set.seed(123)
+fmodel3 <- fit(hmm_3, verbose = FALSE)
 
-set.seed(123) fmodel3 \<- fit(hmm_3, verbose = FALSE)
-
-fmodel3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel3\@response\[\[1\]\]\[\[1\]\]@parameters$sd fmodel3\@response\[\[2\]\]\[\[1\]\]@parameters$coefficients fmodel3\@response\[\[2\]\]\[\[1\]\]@parameters$sd fmodel3\@response\[\[3\]\]\[\[1\]\]@parameters$coefficients fmodel3\@response\[\[3\]\]\[\[1\]\]@parameters$sd
+# 3. Extract estimated mean and standard deviation for ALL hidden states
+fmodel3@response[[1]][[1]]@parameters$coefficients
+fmodel3@response[[1]][[1]]@parameters$sd
+fmodel3@response[[2]][[1]]@parameters$coefficients
+fmodel3@response[[2]][[1]]@parameters$sd
+fmodel3@response[[3]][[1]]@parameters$coefficients
+fmodel3@response[[3]][[1]]@parameters$sd
 
 # 4. Compute standard errors
-
-MLEse3 \<- standardError(fmodel3) round(MLEse3\$par,3)
+MLEse3 <- standardError(fmodel3)
+round(MLEse3$par, 3)
 ```
 
 ```{r}
-#Get the estimated state for each timestep estStates \<- posterior(fmodel)
+#Get the estimated state for each timestep
+estStates <- posterior(fmodel)
 
-plot(time(ts_gistemp_ds), estStates\$state, type = "l", ylab = "Estimated State", xlab = "Time", main = "Estimated Hidden States over Time (2-state HMM)", col = "firebrick", lwd = 1.5)
+plot(time(ts_gistemp_ds),
+     estStates$state,
+     type = "l",
+     ylab = "Estimated State",
+     xlab = "Time",
+     main = "Estimated Hidden States over Time (2-state HMM)",
+     col = "firebrick",
+     lwd = 1.5)
 ```
 
 ```{r}
 # Step 1: Get estimated states
-
-estStates \<- posterior(fmodel)
+estStates <- posterior(fmodel, type = "viterbi")
 
 # Step 2: Assign state numbers to i and ii
-
-i \<- estStates\$state\[1\] ii \<- if (i == 1) 2 else 1
+i <- estStates$state[1]
+ii <- if (i == 1) 2 else 1
 
 # Step 3: Get the estimated means for both states
-
-estMean1 \<- fmodel\@response\[\[i\]\]\[\[1\]\]@parameters$coefficients estMean2 \<- fmodel\@response\[\[ii\]\]\[\[1\]\]@parameters$coefficients
+estMean1 <- fmodel@response[[i]][[1]]@parameters$coefficients
+estMean2 <- fmodel@response[[ii]][[1]]@parameters$coefficients
 
 # Step 4: Create a vector of means based on state assignments
+estMeans <- rep(estMean1, length(ts_gistemp_ds))
+estMeans[estStates[,1] == ii] <- estMean2
 
-estMeans \<- rep(estMean1, length(ts_gistemp_ds)) estMeans\[estStates\$state == ii\] \<- estMean2
+time_vals <- as.numeric(time(ts_gistemp_ds))
 
-# Step 5: Plot original series and estimated means
-
-plot(ts_gistemp_ds, main = "Deseasonalized Data and HMM Estimated Means", ylab = "Temperature Anomaly", xlab = "Time", col = "gray")
+plot(ts_gistemp_ds,
+     main = "Deseasonalized Data and HMM Estimated Means",
+     ylab = "Temperature Anomaly",
+     xlab = "Time",
+     col = "gray")
+lines(time_vals, estMeans, col = "blue", lwd = 2)
 ```
 
 ```{r}
 # Add estimated means as points
-
 points(time(ts_gistemp_ds), estMeans, col = "steelblue", cex = 0.3)
 
+# Create a data frame with the series and estimated state
+results_df <- data.frame(
+  time_index = as.numeric(time(ts_gistemp_ds)),
+  sample_trajectory = as.numeric(ts_gistemp_ds),
+  estimated_state = estStates$state
+) %>% 
+  pivot_longer(cols = c("sample_trajectory", "estimated_state"),
+               names_to = "variable",
+               values_to = "value")
 
-# Crea un data frame con la serie e lo stato stimato
+# Create the plot
+plotobj <- ggplot(results_df, aes(x = time_index, y = value)) +
+  geom_line() +
+  facet_wrap(~variable, scales = "free", ncol = 1) +
+  theme_minimal() +
+  labs(title = "HMM States and Deseasonalized Series",
+       x = "Time", y = "Value")
 
-results_df \<- data.frame( time_index = as.numeric(time(ts_gistemp_ds)), sample_trajectory = as.numeric(ts_gistemp_ds), estimated_state = estStates\$state ) %\>% pivot_longer(cols = c("sample_trajectory", "estimated_state"), names_to = "variable", values_to = "value")
-
-# Crea il grafico
-
-plotobj \<- ggplot(results_df, aes(x = time_index, y = value)) + geom_line() + facet_wrap(\~variable, scales = "free", ncol = 1) + theme_minimal() + labs(title = "HMM States and Deseasonalized Series", x = "Time", y = "Value")
-
-# Mostra il grafico
-
+# Show the plot
 plot(plotobj)
 ```
 
 ```{r}
 # Get time and values
-
-time_vals \<- as.numeric(time(ts_gistemp_ds)) values \<- as.numeric(ts_gistemp_ds) states \<- posterior(fmodel)\$state
+time_vals <- as.numeric(time(ts_gistemp_ds))
+values <- as.numeric(ts_gistemp_ds)
+states <- posterior(fmodel)$state
 
 # Create data frame
-
-df \<- data.frame( time = time_vals, value = values, state = factor(states) )
+df <- data.frame(
+  time = time_vals,
+  value = values,
+  state = factor(states)
+)
 
 # Optional: Fit regression models by state
-
-model1 \<- lm(value \~ time, data = df %\>% filter(state == 1)) model2 \<- lm(value \~ time, data = df %\>% filter(state == 2))
+model1 <- lm(value ~ time, data = df %>% filter(state == 1))
+model2 <- lm(value ~ time, data = df %>% filter(state == 2))
 
 # Create plot with confidence intervals
-
-p \<- ggplot(df, aes(x = time, y = value, color = state, fill = state)) + geom_point(alpha = 0.4, size = 0.5) + geom_smooth(method = "loess", se = TRUE, linetype = "solid", linewidth = 1.2, alpha = 0.2) + labs(title = "Linear Trends by Hidden State (HMM) with Confidence Intervals", x = "Time", y = "Deseasonalized Temperature Anomaly") + theme_minimal() + scale_color_manual(values = c("steelblue", "darkorange")) + scale_fill_manual(values = c("steelblue", "darkorange"))
+p <- ggplot(df, aes(x = time, y = value, color = state, fill = state)) +
+  geom_point(alpha = 0.4, size = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, linetype = "solid", linewidth = 1.2, alpha = 0.2) +
+  labs(title = "Linear Trends by Hidden State (HMM) with Confidence Intervals",
+       x = "Time", y = "Deseasonalized Temperature Anomaly") +
+  theme_minimal() +
+  scale_color_manual(values = c("steelblue", "darkorange")) +
+  scale_fill_manual(values = c("steelblue", "darkorange"))
 
 # Show plot
-
 print(p)
 ```
 
 ```{r}
 # Prepare the time variable
-
-time_vals \<- as.numeric(time(ts_gistemp_ds))
+time_vals <- as.numeric(time(ts_gistemp_ds))
 
 # Combine time and deseasoned series into a dataframe
+df <- data.frame(
+  temp = as.numeric(ts_gistemp_ds),
+  time = time_vals
+)
 
-df \<- data.frame( temp = as.numeric(ts_gistemp_ds), time = time_vals )
-
-# Specify HMM with linear trend in each state: response \~ time
-
-hmm_linear \<- depmix(temp \~ time, family = gaussian(), nstates = 2, data = df)
+# Specify HMM with linear trend in each state: response ~ time
+hmm_linear <- depmix(temp ~ time, family = gaussian(), nstates = 2, data = df)
 ```
 
 ```{r}
 # Fit the model
-
-set.seed(123) fmodel_linear \<- fit(hmm_linear, verbose = FALSE)
+set.seed(123)
+fmodel_linear <- fit(hmm_linear, verbose = FALSE)
 
 # Extract estimated intercepts and slopes
-
-coef1 \<- fmodel_linear\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients \# State 1 coef2 \<- fmodel_linear\@response\[\[2\]\]\[\[1\]\]@parameters$coefficients \# State 2
+coef1 <- fmodel_linear@response[[1]][[1]]@parameters$coefficients  # State 1
+coef2 <- fmodel_linear@response[[2]][[1]]@parameters$coefficients  # State 2
 
 # Optional: view
-
-coef1 \# (Intercept and Slope for State 1) coef2 \# (Intercept and Slope for State 2)
+coef1  # (Intercept and Slope for State 1)
+coef2  # (Intercept and Slope for State 2)
 
 # Get posterior state assignments
-
-estStates \<- posterior(fmodel_linear)
+estStates <- posterior(fmodel_linear)
 
 # Compute fitted values using state-specific regression
-
-fitted_vals \<- numeric(length(df$temp)) fitted_vals[estStates$state == 1\] \<- coef1\[1\] + coef1\[2\] \* df$time[estStates$state == 1\] fitted_vals\[estStates$state == 2] <- coef2[1] + coef2[2] * df$time\[estStates\$state == 2\]
+fitted_vals <- numeric(length(df$temp))
+fitted_vals[estStates$state == 1] <- coef1[1] + coef1[2] * df$time[estStates$state == 1]
+fitted_vals[estStates$state == 2] <- coef2[1] + coef2[2] * df$time[estStates$state == 2]
 ```
-
 ```{r}
 # Plot original series with fitted trend lines
+plot(df$time, df$temp,
+     main = "Deseasonalized Data with State-Dependent Linear Trends",
+     ylab = "Temperature Anomaly", xlab = "Time",
+     type = "l", col = "gray")
 
-plot(df$time, df$temp, main = "Deseasonalized Data with State-Dependent Linear Trends", ylab = "Temperature Anomaly", xlab = "Time", type = "l", col = "gray")
-
-lines(df\$time, fitted_vals, col = "steelblue", lwd = 2)
+lines(df$time, fitted_vals, col = "steelblue", lwd = 2)
 
 # Prepare the time variable
-
-time_vals \<- as.numeric(time(ts_gistemp_ds))
+time_vals <- as.numeric(time(ts_gistemp_ds))
 
 # Combine time and deseasoned series into a dataframe
+df <- data.frame(
+  temp = as.numeric(ts_gistemp_ds),
+  time = time_vals
+)
 
-df \<- data.frame( temp = as.numeric(ts_gistemp_ds), time = time_vals )
-
-# Specify HMM with linear trend in each state: response \~ time
-
-hmm_linear3 \<- depmix(temp \~ time, family = gaussian(), nstates = 3, data = df)
+# Specify HMM with linear trend in each state: response ~ time
+hmm_linear3 <- depmix(temp ~ time, family = gaussian(), nstates = 3, data = df)
 
 # Fit the model
-
-set.seed(123) fmodel_linear3 \<- fit(hmm_linear3, verbose = FALSE)
+set.seed(123)
+fmodel_linear3 <- fit(hmm_linear3, verbose = FALSE)
 
 # Extract estimated intercepts and slopes
-
-coef1 \<- fmodel_linear3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients \# State 1 coef2 \<- fmodel_linear3\@response\[\[2\]\]\[\[1\]\]@parameters$coefficients \# State 2 coef3 \<- fmodel_linear3\@response\[\[3\]\]\[\[1\]\]@parameters$coefficients \# State 3
+coef1 <- fmodel_linear3@response[[1]][[1]]@parameters$coefficients  # State 1
+coef2 <- fmodel_linear3@response[[2]][[1]]@parameters$coefficients  # State 2
+coef3 <- fmodel_linear3@response[[3]][[1]]@parameters$coefficients  # State 3
 ```
 
 ```{r}
 # Optional: view
-
-coef1 \# (Intercept and Slope for State 1) coef2 \# (Intercept and Slope for State 2) coef3 \# (Intercept and Slope for State 3)
+coef1  # (Intercept and Slope for State 1)
+coef2  # (Intercept and Slope for State 2)
+coef3  # (Intercept and Slope for State 3)
 ```
 
 ## 2.2 Dynamic Linear Models
