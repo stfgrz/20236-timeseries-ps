@@ -31,7 +31,7 @@ library(timetk)
 library(timechange)
 
 library(conflicted)
-conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::select)
 ```
 
 # Description of the problem
@@ -395,9 +395,7 @@ df <- data.frame(
 
 # Specify HMM with linear trend in each state: response ~ time
 hmm_linear <- depmix(temp ~ time, family = gaussian(), nstates = 2, data = df)
-```
 
-```{r}
 # Fit the model
 set.seed(123)
 fmodel_linear <- fit(hmm_linear, verbose = FALSE)
@@ -411,13 +409,14 @@ coef1  # (Intercept and Slope for State 1)
 coef2  # (Intercept and Slope for State 2)
 
 # Get posterior state assignments
-estStates <- posterior(fmodel_linear)
+estStates <- posterior(fmodel_linear, type = "viterbi")
 
 # Compute fitted values using state-specific regression
 fitted_vals <- numeric(length(df$temp))
 fitted_vals[estStates$state == 1] <- coef1[1] + coef1[2] * df$time[estStates$state == 1]
 fitted_vals[estStates$state == 2] <- coef2[1] + coef2[2] * df$time[estStates$state == 2]
 ```
+
 ```{r}
 # Plot original series with fitted trend lines
 plot(df$time, df$temp,
@@ -695,6 +694,308 @@ cat("RMSE =", round(RMSE,3),
     " MAE =", round(MAE,3),
     " 95% CI coverage =", round(coverage*100,1), "%\n")
 ```
+
+
+
+### 2.2. b Randow walk + Noise
+
+```{r}
+# Builder: log‐parameters = log(c(V, W))
+buildRW <- function(par) {
+  V <- exp(par[1])      # Observation noise
+  W <- exp(par[2])      # State evolution noise
+  dlmModPoly(order = 1, dV = V, dW = W)
+}
+
+# Initial values based on data variance
+initRW <- log(c(var(ts_gistemp), var(ts_gistemp) / 100))
+
+# Fit model
+fitRW  <- dlmMLE(ts_gistemp, parm = initRW, build = buildRW)
+modRW  <- buildRW(fitRW$par)
+```
+
+```{r}
+filtRW <- dlmFilter(ts_gistemp, modRW)
+smthRW <- dlmSmooth(filtRW)
+
+# Smoothed level
+level_smth <- smthRW$s[-1]
+
+# Variance and std dev
+Ct_smooth_list <- dlmSvd2var(smthRW$U.S, smthRW$D.S)
+sd_level <- sqrt(sapply(Ct_smooth_list, function(M) M[1, 1]))[-1]
+
+# FFBS: simulate 95% CI
+set.seed(123)
+sims.level <- replicate(
+  1000,
+  {
+    draw <- dlmBSample(filtRW)
+    as.numeric(draw[-1])
+  }
+)
+lower95_sim <- apply(sims.level, 1, quantile, probs = 0.025)
+upper95_sim <- apply(sims.level, 1, quantile, probs = 0.975)
+
+# Time index
+time_idx <- seq(
+  from = start(ts_gistemp)[1] + (start(ts_gistemp)[2] - 1) / 12,
+  by = 1 / 12,
+  length.out = length(ts_gistemp)
+)
+
+# Plot data frame
+df_rw <- data.frame(
+  Time       = time_idx,
+  Anomaly    = as.numeric(ts_gistemp),
+  Level_smth = level_smth,
+  Upper95    = upper95_sim,
+  Lower95    = lower95_sim
+)
+
+# Plot
+ggplot(df_rw, aes(x = Time)) +
+  geom_line(aes(y = Anomaly), color = "orange") +
+  geom_line(aes(y = Level_smth), color = "steelblue") +
+  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
+              fill = "steelblue", alpha = 0.2) +
+  labs(title = "RW + Noise: Smoothed Level + 95% CI",
+       x = "Year", y = "Temperature Anomaly (°C)") +
+  theme_minimal()
+
+```
+
+```{r}
+raw_resid <- residuals(filtRW, type = "raw")
+std_resid <- residuals(filtRW, type = "standardized", sd = FALSE)
+
+ts.plot(std_resid, ylab = "Std. Residuals", main = "Standardized One-step-Ahead Errors")
+abline(h = c(-2, 2), col = "red", lty = 2)
+acf(std_resid, main = "ACF of Std. Residuals")
+hist(std_resid, freq = FALSE, main = "Histogram of Std. Residuals")
+curve(dnorm(x), add = TRUE)
+qqnorm(std_resid); qqline(std_resid)
+Box.test(std_resid, type = "Ljung-Box", lag = 20)
+```
+
+```{r}
+fitRW_hess <- dlmMLE(ts_gistemp, parm = initRW, build = buildRW, hessian = TRUE)
+log_par_rw <- fitRW_hess$par
+vcov_log_rw <- solve(fitRW_hess$hessian)
+se_log_rw   <- sqrt(diag(vcov_log_rw))
+
+param_rw <- data.frame(
+  param     = c("V", "W"),
+  log_est   = log_par_rw,
+  log_se    = se_log_rw,
+  est       = exp(log_par_rw),
+  lower95   = exp(log_par_rw - 1.96 * se_log_rw),
+  upper95   = exp(log_par_rw + 1.96 * se_log_rw)
+)
+print(param_rw)
+```
+
+```{r}
+logLik_rw <- -fitRW_hess$value
+p_rw      <- length(log_par_rw)
+n_rw      <- length(ts_gistemp)
+
+AIC_rw <- -2 * logLik_rw + 2 * p_rw
+BIC_rw <- -2 * logLik_rw + log(n_rw) * p_rw
+
+cat("logLik =", logLik_rw, "\nAIC =", AIC_rw, "\nBIC =", BIC_rw, "\n")
+```
+
+```{r}
+n_train <- length(ts_gistemp) - 60
+train_ts <- window(ts_gistemp, end = time(ts_gistemp)[n_train])
+
+fit_rw_tr <- dlmMLE(train_ts, parm = initRW, build = buildRW)
+mod_rw_tr <- buildRW(fit_rw_tr$par)
+filt_rw_tr <- dlmFilter(train_ts, mod_rw_tr)
+
+fc_rw <- dlmForecast(filt_rw_tr, nAhead = 60)
+y_true <- as.numeric(ts_gistemp[(n_train + 1):length(ts_gistemp)])
+y_pred <- drop(fc_rw$f)
+y_lo   <- fc_rw$a + qnorm(0.025) * sqrt(sapply(fc_rw$Q, function(Q) Q[1,1]))
+y_hi   <- fc_rw$a + qnorm(0.975) * sqrt(sapply(fc_rw$Q, function(Q) Q[1,1]))
+
+errors <- y_true - y_pred
+RMSE_rw   <- sqrt(mean(errors^2))
+MAE_rw    <- mean(abs(errors))
+coverage_rw <- mean((y_true >= y_lo) & (y_true <= y_hi))
+
+cat("RW+Noise forecast:\n",
+    "RMSE =", round(RMSE_rw, 3),
+    " MAE =", round(MAE_rw, 3),
+    " 95% CI coverage =", round(coverage_rw * 100, 1), "%\n")
+
+```
+
+
+
+### 2.2. c Randow walk + seasonality
+```{r}
+# Builder: log-parameters = log(c(V, W_level, W_seasonal))
+buildRWSeas <- function(par) {
+  V         <- exp(par[1])
+  W_level   <- exp(par[2])
+  W_season  <- exp(par[3])
+  
+  level     <- dlmModPoly(order = 1, dV = V, dW = W_level)
+  seasonal  <- dlmModSeas(frequency = 12, dV = 0,
+                          dW = c(W_season, rep(0, 10)))  # only first harmonic
+  level + seasonal
+}
+
+# Initial values: reasonable guesses
+init_par <- log(c(
+  var(ts_gistemp),
+  var(ts_gistemp)/100,
+  var(ts_gistemp)/100
+))
+
+# MLE estimation
+fitRWSeas <- dlmMLE(ts_gistemp, parm = init_par, build = buildRWSeas)
+modRWSeas <- buildRWSeas(fitRWSeas$par)
+```
+
+```{r}
+filtRWSeas <- dlmFilter(ts_gistemp, modRWSeas)
+smthRWSeas <- dlmSmooth(filtRWSeas)
+
+# Extract smoothed level only (first state component)
+level_smth <- smthRWSeas$s[-1, 1]
+
+# Variance of smoothed level
+Ct_smooth <- dlmSvd2var(smthRWSeas$U.S, smthRWSeas$D.S)
+sd_level  <- sqrt(sapply(Ct_smooth, function(M) M[1, 1]))[-1]
+
+# FFBS simulations for credible intervals
+set.seed(123)
+n.sims <- 1000
+sims.level <- replicate(
+  n.sims,
+  {
+    draw <- dlmBSample(filtRWSeas)
+    as.numeric(draw[-1, 1])
+  }
+)
+
+lower95_sim <- apply(sims.level, 1, quantile, probs = 0.025)
+upper95_sim <- apply(sims.level, 1, quantile, probs = 0.975)
+
+# Time index
+time_idx <- seq(
+  from = start(ts_gistemp)[1] + (start(ts_gistemp)[2] - 1) / 12,
+  by   = 1 / 12,
+  length.out = length(ts_gistemp)
+)
+
+# Data frame for plotting
+df_rwseas <- data.frame(
+  Time       = time_idx,
+  Anomaly    = as.numeric(ts_gistemp),
+  Level_smth = level_smth,
+  Lower95    = lower95_sim,
+  Upper95    = upper95_sim
+)
+
+# Plot
+ggplot(df_rwseas, aes(x = Time)) +
+  geom_line(aes(y = Anomaly), color = "orange", linewidth = 0.7) +
+  geom_line(aes(y = Level_smth), color = "steelblue", linewidth = 0.5) +
+  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
+              fill = "steelblue", alpha = 0.2) +
+  labs(
+    title = "Smoothed Level from RW + Seasonality",
+    subtitle = "95% credible intervals from FFBS",
+    x = "Year", y = "Temperature Anomaly (°C)"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+raw_resid <- residuals(filtRWSeas, type = "raw")
+std_resid <- residuals(filtRWSeas, type = "standardized", sd = FALSE)
+
+ts.plot(std_resid, ylab = "Standardized Residuals",
+        main = "One-step-ahead Standardized Residuals")
+abline(h = c(-2, 2), col = "firebrick", lty = 2)
+acf(std_resid, main = "ACF of Standardized Residuals")
+hist(std_resid, freq = FALSE, main = "Histogram of Std. Residuals")
+curve(dnorm(x), add = TRUE)
+qqnorm(std_resid); qqline(std_resid)
+Box.test(std_resid, lag = 20, type = "Ljung-Box")
+```
+
+```{r}
+fit_hess <- dlmMLE(ts_gistemp, parm = init_par,
+                   build = buildRWSeas, hessian = TRUE)
+
+log_par <- fit_hess$par
+vcov_log <- solve(fit_hess$hessian)
+se_log <- sqrt(diag(vcov_log))
+
+param_tab <- data.frame(
+  param     = c("V", "W_level", "W_seasonal"),
+  log_est   = log_par,
+  log_se    = se_log,
+  est       = exp(log_par),
+  lower95   = exp(log_par - 1.96 * se_log),
+  upper95   = exp(log_par + 1.96 * se_log)
+)
+
+print(param_tab)
+```
+
+```{r}
+logLik <- -fit_hess$value
+p <- length(log_par)
+n <- length(ts_gistemp)
+
+AIC <- -2 * logLik + 2 * p
+BIC <- -2 * logLik + log(n) * p
+
+cat("logLik =", logLik,
+    "\nAIC =", AIC,
+    "\nBIC =", BIC, "\n")
+
+```
+```{r}
+n_train   <- length(ts_gistemp) - 60
+t_end     <- time(ts_gistemp)[n_train]
+train_ts  <- window(ts_gistemp, end = t_end)
+
+# Refit on training
+fit_train <- dlmMLE(train_ts, parm = init_par, build = buildRWSeas)
+mod_train <- buildRWSeas(fit_train$par)
+filt_train <- dlmFilter(train_ts, mod_train)
+
+# Forecast 60 months
+fc <- dlmForecast(filt_train, nAhead = 60)
+y_true <- as.numeric(ts_gistemp[(n_train+1):length(ts_gistemp)])
+y_pred <- drop(fc$f)
+y_lo <- fc$a + qnorm(0.025) * sqrt(sapply(fc$Q, function(Q) Q[1,1]))
+y_hi <- fc$a + qnorm(0.975) * sqrt(sapply(fc$Q, function(Q) Q[1,1]))
+
+# Accuracy metrics
+errors   <- y_true - y_pred
+RMSE     <- sqrt(mean(errors^2))
+MAE      <- mean(abs(errors))
+coverage <- mean((y_true >= y_lo) & (y_true <= y_hi))
+
+cat("RW + Seasonality Forecast:\n",
+    "RMSE =", round(RMSE, 3),
+    " MAE =", round(MAE, 3),
+    " 95% CI coverage =", round(coverage * 100, 1), "%\n")
+
+```
+
+
+
 
 # Task 3 \| GHCN: Weather prediction
 
