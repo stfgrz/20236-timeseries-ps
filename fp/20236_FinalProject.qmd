@@ -210,7 +210,6 @@ station_list <- lapply(stations, function(st) {
 })
 ```
 
-
 ```{r}
 #| label: Converting to a daily time series object
 
@@ -256,7 +255,6 @@ fmodel\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel\@response\[\[1
 MLEse \<- standardError(fmodel) round(MLEse\$par,3)
 ```
 
-
 ```{r}
 #| label: 3-states HMM
 
@@ -275,13 +273,11 @@ fmodel3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel3\@response\[\
 MLEse3 \<- standardError(fmodel3) round(MLEse3\$par,3)
 ```
 
-
 ```{r}
 #Get the estimated state for each timestep estStates \<- posterior(fmodel)
 
 plot(time(ts_gistemp_ds), estStates\$state, type = "l", ylab = "Estimated State", xlab = "Time", main = "Estimated Hidden States over Time (2-state HMM)", col = "firebrick", lwd = 1.5)
 ```
-
 
 ```{r}
 # Step 1: Get estimated states
@@ -323,7 +319,6 @@ plotobj \<- ggplot(results_df, aes(x = time_index, y = value)) + geom_line() + f
 
 plot(plotobj)
 ```
-
 
 ```{r}
 # Get time and values
@@ -416,7 +411,6 @@ coef1 \<- fmodel_linear3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients \# 
 
 coef1 \# (Intercept and Slope for State 1) coef2 \# (Intercept and Slope for State 2) coef3 \# (Intercept and Slope for State 3)
 ```
-
 
 ## 2.2 Dynamic Linear Models
 
@@ -882,6 +876,39 @@ lb_tmin <- Box.test(std_resid[,1], type = "Ljung-Box", lag = 20)
 lb_tmax <- Box.test(std_resid[,2], type = "Ljung-Box", lag = 20)
 print(lb_tmin)
 print(lb_tmax)
+
+checkresiduals(std_resid[,1])
+checkresiduals(std_resid[,2])
+```
+
+```{r}
+#| label: 2. Forecast accuracy metrics
+raw2 <- residuals(filtInd, type = "raw", sd = TRUE)
+res_raw2 <- raw2$res     # n×2 ts of one-step-ahead errors y_t - ŷ_{t|t-1}
+pred_se2 <- raw2$sd      # n×2 ts of predictive standard deviations
+
+y_pred2 <- y - res_raw2
+
+
+ok  <- complete.cases(res_raw2)   # drop initial NA
+e   <- res_raw2[ok,]              # raw errors
+se  <- pred_se2[ok,]              # predictive SD
+
+rmse <- sqrt(colMeans(e^2))
+mae  <- colMeans(abs(e))
+
+lower2 <- y_pred2 - 1.96 * pred_se2
+upper2 <- y_pred2 + 1.96 * pred_se2
+cov  <- sapply(1:2, function(i)
+  mean(temp[ok,i] >= lower2[ok,i] & y[ok,i] <= upper2[ok,i]) * 100
+)
+cat("Series   RMSE    MAE   95% PI Coverage\n")
+cat(sprintf("Tmin   %6.3f %6.3f    %5.1f%%\n",
+            rmse[1], mae[1], cov[1]))
+cat(sprintf("Tmax   %6.3f %6.3f    %5.1f%%\n",
+            rmse[2], mae[2], cov[2]))
+
+colnames(y_pred) <- colnames(y)
 ```
 
 ```{r}
@@ -1069,6 +1096,7 @@ upper <- y_pred + 1.96 * pred_se
 cov  <- sapply(1:2, function(i)
   mean(temp[ok,i] >= lower[ok,i] & temp[ok,i] <= upper[ok,i]) * 100
 )
+
 ```
 
 ```{r}
@@ -1504,6 +1532,45 @@ lb_tmin_CF <- Box.test(std_resid_CF[,1], type = "Ljung-Box", lag = 20)
 lb_tmax_CF <- Box.test(std_resid_CF[,2], type = "Ljung-Box", lag = 20)
 print(lb_tmin_CF)
 print(lb_tmax_CF)
+
+checkresiduals(std_resid_CF[,1])
+checkresiduals(std_resid_CF[,2])
+```
+
+```{r}
+#| label: 2. Forecast accuracy metrics
+rawCF    <- residuals(filtCF, type = "raw", sd = TRUE)
+res_rawCF <- rawCF$res     # n×2 ts of one-step-ahead errors y_t - ŷ_{t|t-1}
+pred_seCF <- rawCF$sd      # n×2 ts of predictive standard deviations
+
+# reconstruct the in‐sample forecasts 
+y_predCF <- y - res_rawCF
+
+
+okCF  <- complete.cases(res_rawCF)   # drop initial NA
+eCF   <- res_rawCF[okCF,]              # raw errors
+seCF  <- pred_seCF[okCF,]              # predictive SD
+
+rmse <- sqrt(colMeans(eCF^2))
+mae  <- colMeans(abs(eCF))
+
+lower <- y_predCF - 1.96 * pred_seCF
+upper <- y_predCF + 1.96 * pred_seCF
+cov  <- sapply(1:2, function(i)
+  mean(temp[ok,i] >= lower[okCF,i] & y[okCF,i] <= upper[okCF,i]) * 100
+)
+```
+
+```{r}
+#| label: 3. Print summary
+
+cat("Series   RMSE    MAE   95% PI Coverage\n")
+cat(sprintf("Tmin   %6.3f %6.3f    %5.1f%%\n",
+            rmse[1], mae[1], cov[1]))
+cat(sprintf("Tmax   %6.3f %6.3f    %5.1f%%\n",
+            rmse[2], mae[2], cov[2]))
+
+colnames(y_pred) <- colnames(y)
 ```
 
 ```{r}
@@ -1601,4 +1668,3 @@ summary(half_width)
 ```{r}
 
 ```
-
