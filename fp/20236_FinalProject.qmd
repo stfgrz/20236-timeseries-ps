@@ -144,14 +144,18 @@ ghcn <- ghcn %>%
 
 ```{r}
 #| label: Filtering for the Bay Area stations
-#| eval: false
-#| include: false
 
 # San Francisco Downtown
 
 sf <- ghcn %>%
   filter(station_id == "USW00023272") %>%
   arrange(date)
+```
+
+```{r}
+#| label: If we manage to obtain the extra data
+#| eval: false
+#| include: false
 
 # San Francisco Golden Gate Park
 
@@ -183,6 +187,7 @@ sf_om <- ghcn %>%
   filter(station_id == "USC00046336") %>%
   arrange(date)
 ```
+
 
 ```{r}
 #| label: Obtaining a single list for all the stations
@@ -237,6 +242,8 @@ Consider the seasonality adjusted time-series from the GISTEMP data.
 
 Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
 
+### 2.1.a 2-states HMM
+
 ```{r}
 #| label: 2-states HMM
 
@@ -260,6 +267,7 @@ fmodel@response[[2]][[1]]@parameters$sd
 MLEse <- standardError(fmodel)
 round(MLEse$par,3)
 ```
+### 2.1.b 3-states HMM
 
 ```{r}
 #| label: 3-states HMM
@@ -329,7 +337,7 @@ lines(time_vals, estMeans, col = "blue", lwd = 2)
 
 ```{r}
 # Add estimated means as points
-points(time(ts_gistemp_ds), estMeans, col = "steelblue", cex = 0.3)
+# points(time(ts_gistemp_ds), estMeans, col = "steelblue", cex = 0.3)
 
 # Create a data frame with the series and estimated state
 results_df <- data.frame(
@@ -342,7 +350,7 @@ results_df <- data.frame(
                values_to = "value")
 
 # Create the plot
-plotobj <- ggplot(results_df, aes(x = time_index, y = value)) +
+2state_hmm <- ggplot(results_df, aes(x = time_index, y = value)) +
   geom_line() +
   facet_wrap(~variable, scales = "free", ncol = 1) +
   theme_minimal() +
@@ -350,7 +358,7 @@ plotobj <- ggplot(results_df, aes(x = time_index, y = value)) +
        x = "Time", y = "Value")
 
 # Show the plot
-plot(plotobj)
+plot(2state_hmm)
 ```
 
 ```{r}
@@ -696,11 +704,14 @@ cat("RMSE =", round(RMSE,3),
     " 95% CI coverage =", round(coverage*100,1), "%\n")
 ```
 
+### 2.2.b Randow walk + Noise
 
-
-### 2.2. b Randow walk + Noise
+> This is the model we are going for, best explanatory power both in-sample and out-sample
 
 ```{r}
+#| label: Building the function
+
+
 # Builder: log‐parameters = log(c(V, W))
 buildRW <- function(par) {
   V <- exp(par[1])      # Observation noise
@@ -717,6 +728,8 @@ modRW  <- buildRW(fitRW$par)
 ```
 
 ```{r}
+#| label: Filtering and smoothing
+
 filtRW <- dlmFilter(ts_gistemp, modRW)
 smthRW <- dlmSmooth(filtRW)
 
@@ -745,39 +758,235 @@ time_idx <- seq(
   by = 1 / 12,
   length.out = length(ts_gistemp)
 )
+```
 
-# Plot data frame
-df_rw <- data.frame(
-  Time       = time_idx,
-  Anomaly    = as.numeric(ts_gistemp),
-  Level_smth = level_smth,
-  Upper95    = upper95_sim,
-  Lower95    = lower95_sim
+```{r}
+#| label: Visual representation of the whole dataset
+
+
+df_rwpn <- data.frame(
+  Year     = time_idx,
+  Temp     = as.numeric(ts_gistemp),
+  Level    = level_smth,
+  lower_95 = lower95_sim,
+  upper_95 = upper95_sim
 )
 
-# Plot
-ggplot(df_rw, aes(x = Time)) +
-  geom_line(aes(y = Anomaly), color = "orange") +
-  geom_line(aes(y = Level_smth), color = "steelblue") +
-  geom_ribbon(aes(ymin = Lower95, ymax = Upper95),
-              fill = "steelblue", alpha = 0.2) +
-  labs(title = "RW + Noise: Smoothed Level + 95% CI",
-       x = "Year", y = "Temperature Anomaly (°C)") +
-  theme_minimal()
+# Build the plot
+ggplot(df_rwpn, aes(x = Year)) +
+
+  # (a) Original data as a thin orange line
+  geom_line(aes(y = Temp), 
+            color = "orange", 
+            size  = 0.7) +
+
+  # (b) Shaded 95% credible ribbon around smoothed level
+  geom_ribbon(aes(ymin = lower_95, ymax = upper_95),
+              fill  = "steelblue",
+              alpha = 0.25) +
+
+  # (c) Smoothed level (posterior mean) as a thicker blue line
+  geom_line(aes(y = Level),
+            color = "steelblue",
+            size  = 0.8) +
+
+  # Labels
+  labs(
+    title    = "Random-Walk Smoothing on NASA GISTEMP Series",
+    subtitle = "Smoothed Monthly State Estimates ± 95% Credible Intervals (FFBS)",
+    x        = "Year",
+    y        = "Temperature Anomaly (°C)"
+  ) +
+
+  # Minimal theme with larger base font for publication
+  theme_minimal(base_size = 14) +
+  theme(
+    # Make titles stand out
+    plot.title    = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(face = "italic", size = 12),
+    # Axis labels slightly larger
+    axis.title    = element_text(size = 14),
+    axis.text     = element_text(size = 12),
+  )
 
 ```
+```{r}
+#| label: Visual representation of a subset (1972-1977)
+
+# Subset the data.frame for years 1972 ≤ Year ≤ 1977
+df_rwpn_sub <- subset(df_rwpn, Year >= 1972 & Year <= 1977)
+
+# 3. Plot the 1972–1977 subset
+ggplot(df_rwpn_sub, aes(x = Year)) +
+  
+  # (a) Original data 
+  geom_line(aes(y = Temp),
+            color = "orange",
+            size  = 0.7) +
+  
+  # (b) 95% ribbon around the smoothed level
+  geom_ribbon(aes(ymin = lower_95, ymax = upper_95),
+              fill  = "steelblue",
+              alpha = 0.25) +
+  
+  # (c) Smoothed level (posterior mean)
+  geom_line(aes(y = Level),
+            color = "steelblue",
+            size  = 0.8) +
+  
+  # 4. Labels
+  labs(
+    title    = "Random-Walk Smoothing on GISTEMP (1972–1977)",
+    subtitle = "Monthly Temperature Anomalies with Smoothed State ±95% CI (FFBS)",
+    x        = "Year",
+    y        = "Temperature Anomaly (°C)"
+  ) +
+  
+  # 5. Theme (same as before, but you can tweak if needed)
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(face = "italic", size = 12),
+    axis.title    = element_text(size = 14),
+    axis.text     = element_text(size = 12),
+    ) +
+  
+  # 6. Ensure x‐axis ticks are sensible for a 5‐year window
+  scale_x_continuous(breaks = seq(1972, 1977, by = 1))
+
+```
+
+
+#### 2.2.b.(i) RWPN Model evaluation 
 
 ```{r}
 raw_resid <- residuals(filtRW, type = "raw")
 std_resid <- residuals(filtRW, type = "standardized", sd = FALSE)
 
-ts.plot(std_resid, ylab = "Std. Residuals", main = "Standardized One-step-Ahead Errors")
-abline(h = c(-2, 2), col = "red", lty = 2)
-acf(std_resid, main = "ACF of Std. Residuals")
-hist(std_resid, freq = FALSE, main = "Histogram of Std. Residuals")
-curve(dnorm(x), add = TRUE)
-qqnorm(std_resid); qqline(std_resid)
-Box.test(std_resid, type = "Ljung-Box", lag = 20)
+#— 1. Put standardized residuals into a data.frame —#
+df_resid <- data.frame(
+  Year     = time_idx,
+  StdResid = as.numeric(std_resid)
+)
+
+#— 2. (a) Time‐series plot of Std. Residuals —#
+p_ts <- ggplot(df_resid, aes(x = Year, y = StdResid)) +
+  geom_line(color = "steelblue", size = 0.8) +
+  geom_hline(yintercept = c(-2, 2),
+             linetype   = "dashed",
+             color      = "orange",
+             size       = 0.6) +
+  labs(
+    title = "Standardized One-Step-Ahead Errors (Std. Residuals)",
+    x     = "Year",
+    y     = "Std. Residual"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 15),
+    axis.title    = element_text(size = 13),
+    axis.text     = element_text(size = 11),
+    panel.grid    = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+
+#— 2. (b) ACF plot of Std. Residuals —#
+#   Compute ACF values without plotting
+acf_obj <- acf(df_resid$StdResid, plot = FALSE, lag.max = 40)
+
+#   Turn the ACF into a data.frame
+df_acf <- data.frame(
+  Lag = as.numeric(acf_obj$lag)[-1],       # drop lag 0
+  ACF = as.numeric(acf_obj$acf)[-1]
+)
+
+p_acf <- ggplot(df_acf, aes(x = Lag, y = ACF)) +
+  geom_col(fill = "steelblue", color = NA, width = 0.1) +
+  geom_hline(yintercept = 0, color = "gray40", size = 0.5) +
+  geom_hline(yintercept = c(-1.96 / sqrt(length(std_resid)),
+                            1.96 / sqrt(length(std_resid))),
+             linetype = "dashed",
+             color    = "orange",
+             size     = 0.4) +
+  labs(
+    title = "ACF of Standardized Residuals",
+    x     = "Lag",
+    y     = "ACF"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(face = "bold", size = 15),
+    axis.title     = element_text(size = 13),
+    axis.text      = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+
+#— 2. (c) Histogram + Normal Density —#
+#   Estimate empirical SD (should be ≈ 1 if truly standardized)
+emp_sd <- sd(df_resid$StdResid)
+
+p_hist <- ggplot(df_resid, aes(x = StdResid)) +
+  geom_histogram(aes(y = ..density..),
+                 bins   = 30,
+                 fill   = "steelblue",
+                 color  = "white",
+                 alpha  = 0.8) +
+  stat_function(
+    fun  = dnorm,
+    args = list(mean = 0, sd = emp_sd),
+    color = "orange",
+    size  = 1
+  ) +
+  labs(
+    title = "Histogram of Standardized Residuals",
+    x     = "Std. Residual",
+    y     = "Density"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 15),
+    axis.title    = element_text(size = 13),
+    axis.text     = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+
+#— 2. (d) Q–Q Plot of Std. Residuals —#
+p_qq <- ggplot(df_resid, aes(sample = StdResid)) +
+  stat_qq(color    = "steelblue", size = 1.8) +
+  stat_qq_line(color = "orange", size = 0.6) +
+  labs(
+    title = "Normal Q–Q Plot of Standardized Residuals",
+    x     = "Theoretical Quantiles",
+    y     = "Sample Quantiles"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 15),
+    axis.title    = element_text(size = 13),
+    axis.text     = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+
+#— 3. Print the Ljung‐Box test result —#
+lb_test <- Box.test(df_resid$StdResid, type = "Ljung-Box", lag = 20)
+print(lb_test)
+
+
+#— 4. Display all four plots —#
+# You can simply print them one after the other, or arrange with patchwork/cowplot
+# (here, we just print sequentially)
+
+p_ts
+p_acf
+p_hist
+p_qq
 ```
 
 ```{r}
@@ -834,9 +1043,8 @@ cat("RW+Noise forecast:\n",
 
 ```
 
+### 2.2.c Randow walk + seasonality
 
-
-### 2.2. c Randow walk + seasonality
 ```{r}
 # Builder: log-parameters = log(c(V, W_level, W_seasonal))
 buildRWSeas <- function(par) {
