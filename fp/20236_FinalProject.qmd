@@ -2010,6 +2010,516 @@ summary(half_width)
 
 ## 3.3 Introducing spatial dependence
 
+This R script demonstrates how to build a multistation state-space model (Dynamic Linear Model, **DLM**) to forecast daily minimum and maximum temperatures in San Francisco (SF). We use the `dlm` package (Petris et al., 2009) to construct a Bayesian state-space model that **focuses on SF** but **borrows strength from nearby stations**. The model incorporates seasonal components (to capture annual cycles) and handles missing observations via the Kalman filter. Parameter estimation is done in a Bayesian framework (using maximum likelihood or Gibbs sampling for variance components as outlined by Petris et al.). Below, we provide well-documented R code for data preparation, model construction, filtering, smoothing, forecasting (3-day, 7-day, 14-day horizons), and plotting of predictions.
+
+### 3.3.1 Data Preparation and Station Selection
+
+First, we load the daily temperature data and prepare it for modeling. We assume `ghcn.csv` contains daily observations for SF and other stations (e.g., nearby California locations). We filter the data to include SF and a handful of neighboring stations so that the model can leverage their data. If the data is in long format (rows for each station-date-variable), we pivot it to a **wide format** with each column as a station’s time series. Missing values (NA) are allowed and will be handled by the Kalman filter.
+
 ```{r}
+# Load required package
+library(dlm)        # for Dynamic Linear Models
+library(tidyverse)  # for data manipulation (dplyr, tidyr, ggplot2, etc.)
+library(lubridate)  # for working with Dates
+
+# 1b) Read (or re‐read) the GHCN CSV (you already had this, but for clarity):
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE)
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+# 1c) Convert types, compute actual Celsius / mm, and drop the “_tenth” fields:
+ghcn <- ghcn %>%
+  mutate(
+    date  = as_date(date),                   # convert YYYY-MM-DD → Date
+    tmin  = tmin_tenthC / 10,                # tenths of °C → °C
+    tmax  = tmax_tenthC / 10,                # tenths of °C → °C
+    prcp  = prcp_tenthmm / 10                 # tenths of mm → mm
+  ) %>%
+  select(
+    station_id, station_name, latitude, longitude, elevation_m,
+    date, tmin, tmax, prcp
+  )
+
+ghcn <- subset(ghcn, date >= as.Date("1976-11-01"))
+
+# Filter data for those stations and pivot to wide format (Date as index):
+library(tidyr)
+library(dplyr)
+
+# Pivot to wide: create separate wide data for TMIN and TMAX
+tmin_wide <- ghcn %>%
+  select(date, station_name, tmin) %>%
+  pivot_wider(names_from = station_name, values_from = tmin)
+
+tmax_wide <- ghcn %>%
+  select(date, station_name, tmax) %>%
+  pivot_wider(names_from = station_name, values_from = tmax)
+
+# Ensure dates are sorted and aligned
+tmin_wide <- arrange(tmin_wide, date)
+tmax_wide <- arrange(tmax_wide, date)
+
+# Extract the matrix of values (exclude Date column)
+Y_min <- as.matrix(tmin_wide[,-1])   # rows: dates, cols: stations
+Y_max <- as.matrix(tmax_wide[,-1])
+
+# Set row names as date for clarity (optional)
+rownames(Y_min) <- tmin_wide$date
+rownames(Y_max) <- tmax_wide$date
+
+# Confirm dimensions and presence of NAs
+dim(Y_min); dim(Y_max)
+colnames(Y_min)  # should list station names in target_stations order
+summary(Y_min)   # check for missing values
+
+# For modeling, we'll proceed with Y_max (daily max temp) for demonstration.
+Y <- Y_max   # use daily maximum temperature; similarly, Y_min can be modeled
+```
+
+**Notes:** We chose a set of nearby stations (including SF) to help forecast SF’s temperatures. Having multiple stations’ data in `Y` allows the state-space model to exploit their shared trends and seasonal patterns. The data is now in a matrix `Y` of size `[time_points × number_of_stations]`. Missing values (`NA`) in `Y` are acceptable – the Kalman filter will automatically handle them by skipping updates for those entries.
+
+### 3.3.2 Model Specification: State-Space Structure
+
+We construct a **Dynamic Linear Model** for the multistation temperature data. The state vector is designed to capture shared dynamics across stations as well as station-specific effects. Key state components include:
+
+-   **Global Level (Trend):** A local level representing the underlying regional temperature signal (centered on SF). This captures day-to-day fluctuations (e.g., weather anomalies) common to all stations. We allow it to evolve via a random walk (with variance *W_level* to be estimated).
+-   **Seasonal Harmonics (Annual Cycle):** We include a seasonal component to model the annual temperature cycle (period \~365 days). We use a Fourier form seasonal model with a few harmonics (e.g., 1st and 2nd harmonics) for parsimony. This captures the yearly temperature pattern (summer highs, winter lows) while allowing slow variation year-to-year by assigning a small evolution variance.
+-   **Station Biases:** Each station (except SF as baseline) gets a constant bias term to account for its average difference from SF (due to elevation, coastal vs inland, etc.). These biases are included as state components (one per station) and can be treated as either fixed offsets (zero evolution variance) or as very slowly varying (small *W_bias*). This ensures the model’s shared level + seasonal pattern is adjusted to each station’s mean.
+
+The observation equation links these states to the actual station temperatures. **San Francisco’s temperature** is modeled as: $\text{SF}_t = L_t + S_t + \varepsilon_{SF,t},$ where $L_t$ is the global level and $S_t$ is the seasonal effect (sum of harmonics) at time *t*. For another station *j*, the observation is: $Y_{j,t} = L_t + S_t + b_{j,t} + \varepsilon_{j,t},$ where $b_{j,t}$ is the bias state for station *j*. If bias states are static (no evolution noise), then $b_{j,t} = b_j$ (constant offset). All $\varepsilon_{*,t}$ are observation errors (assumed Gaussian white noise) – we will allow for a station-specific or common observation variance *V*. The state evolution for $L_t$ (and an optional slope) is a local trend model, for seasonal states is a rotation each day (with small variance), and for biases is identity (persistence).
+
+Below we construct the `dlm` model matrices for this structure:
+
+```{r}
+# Determine model dimensions
+n_stations <- ncol(Y)                     # number of stations (m)
+station_names <- colnames(Y)
+# Assume station_names[1] == "SAN FRANCISCO" (the target), used as baseline
+sf_idx <- which(station_names == "SAN FRANCISCO DWTN")
+new_order <- c(sf_idx, setdiff(seq_along(station_names), sf_idx))
+Y <- Y[, new_order]
+station_names <- station_names[new_order]
+
+
+# 1. Define the base model for common trend + seasonal component (single-output DLM)
+#    We'll use a local linear trend (order=2: level + slope) and a Fourier seasonal component with annual period.
+#    Set dV=0 for these components since observation noise will be added separately for each station.
+base_trend <- dlmModPoly(order = 2, dV = 0, dW = c(1e-7, 1e-7))  
+# (Initial guess: almost no noise for level/slope; will be adjusted later. 
+#  We'll estimate optimal variances via dlmMLE.)
+base_season <- dlmModTrig(s = 365, q = 2, dV = 0, dW = 1e-5)  
+# (Using first 2 harmonics of period 365:contentReference[oaicite:7]{index=7}. Small dW gives a slowly time-varying seasonal pattern.)
+base_model <- base_trend + base_season   # Combine trend and seasonal into one single-output DLM
+
+# Inspect state vector size of base_model
+m_base <- ncol(base_model$FF)   # number of base states (level, slope, and Fourier states)
+m_base  # for order=2 and q=2, m_base = 2 (trend) + 2*2 (harmonics*2) = 6 states
+
+# 2. Augment the state vector with station-specific bias states for stations 2..m
+n_bias <- n_stations - 1
+total_states <- m_base + n_bias
+
+# Initialize observation matrix FF for multi-station
+FF_multi <- matrix(0, nrow = n_stations, ncol = total_states)
+# Fill common part: each station observes the common trend+season sum
+FF_common <- base_model$FF            # 1 x m_base (for single output) 
+for (i in 1:n_stations) {
+  FF_multi[i, 1:m_base] <- FF_common   # all stations see L_t + S_t
+}
+# Add identity for bias terms: station j (index>1) has a bias state at position m_base + (j-1)
+if (n_bias > 0) {
+  for (j in 2:n_stations) {
+    bias_index <- m_base + (j-1)
+    FF_multi[j, bias_index] <- 1      # station j gets its bias state
+  }
+}
+# For SF (station 1), we intentionally do not add a bias term (or equivalently bias state = 0)
+
+# Define state transition matrix GG for combined state:
+# - Base states (trend + seasonal) follow base_model$GG (m_base x m_base matrix)
+# - Bias states follow identity (they persist from t to t+1, possibly with small random walk)
+GG_multi <- diag(1, total_states)               # start with identity
+GG_multi[1:m_base, 1:m_base] <- base_model$GG   # insert base transition for common states
+# (Bias states remain 1 on diagonal, 0 off-diagonals, meaning b_{j,t+1} = b_{j,t} + noise)
+
+# System noise covariance matrix W:
+W_multi <- matrix(0, nrow = total_states, ncol = total_states)
+# Insert base model system covariance (trend & seasonal part)
+W_multi[1:m_base, 1:m_base] <- base_model$W
+# Bias states: set small variance for each bias (or 0 if treating biases as fixed)
+if (n_bias > 0) {
+  bias_var <- 1e-7  # initial guess: almost no drift in bias
+  diag(W_multi[(m_base+1):total_states, (m_base+1):total_states]) <- bias_var
+}
+
+# Observation covariance matrix V:
+# Assume independent observation errors per station. We can start with equal variances for all,
+# and later allow estimation of these variances.
+V_multi <- diag(1, n_stations)   # initial guess: 1 (will be adjusted by MLE)
+
+# Initial state prior (m0 and C0):
+m0 <- rep(0, total_states)
+# We can set initial biases based on first observations if available (difference from SF)
+if (n_bias > 0) {
+  sf_initial <- Y[1, 1]
+  for (j in 2:n_stations) {
+    if (!is.na(Y[1,j]) && !is.na(sf_initial)) {
+      m0[m_base + (j-1)] <- Y[1, j] - sf_initial  # initial bias as difference on first day
+    } else {
+      m0[m_base + (j-1)] <- 0  # if missing, start at 0 bias
+    }
+  }
+}
+# Set a large initial covariance for uncertainty in states
+C0 <- diag(1e6, total_states)
+# (High uncertainty allows the filter to learn the true state values from data. 
+# If prior knowledge exists, we could reduce these variances.)
+
+# Assemble the DLM with all components:
+mod_multi <- dlm(m0 = m0, C0 = C0, FF = FF_multi, V = V_multi, GG = GG_multi, W = W_multi)
+mod_multi  # print a summary of the model structure
+```
+
+**Explanation:** We built the multivariate DLM in steps. The **base model** `base_model` represents a single-output DLM for the shared SF temperature signal: it has a local linear trend (order 2) and an annual seasonal component with two harmonics. The Fourier seasonal component provides a parsimonious representation of a yearly cycle, and we allow it to evolve slowly by giving it a tiny process variance. Next, we expanded this model to multiple stations by adding bias states. The `FF_multi` matrix is defined such that each station’s observation is the sum of the common trend+season and its own bias (zero for SF). The `GG_multi` matrix keeps the common states evolving as before and makes each bias state follow a **random walk** (identity transition). We initialized the process noise `W_multi` with small variances for all states (to be tuned) and the observation noise `V_multi` as identity (to be estimated). A diffuse prior (large `C0`) is used so that the data can inform the state estimates. **Missing data** is handled implicitly: if some `Y[t,j]` is NA, the Kalman filter will simply not update that station’s component at time *t*, effectively carrying forward the predicted state for that observation.
+
+### 3.3.3 Bayesian Parameter Inference (Variance Estimation)
+
+The DLM’s structure is specified, but certain hyperparameters (variance terms in `W` and `V`) are unknown and need to be learned. Following Petris et al. (2009), we can estimate these using **Bayesian inference**. One approach is to put prior distributions on the variances and run a Gibbs sampler (`dlmGibbsDIG`) to sample from their posterior. For simplicity, here we perform **Maximum Likelihood Estimation (MLE)** of the variances, which corresponds to finding posterior mode estimates (an empirical Bayes approach). We use `dlmMLE` to optimize the log-likelihood of the model with respect to selected variance parameters, then update the DLM with these estimates.
+
+In the code below, we choose to estimate the global level's evolution variance and the observation noise variance, while keeping other variances fixed at small values. (We could also estimate more parameters – e.g. slope variance, seasonal variance, or separate noise per station – but to avoid overfitting, we start simple.) The parameters are optimized in log-space to enforce positivity.
+
+```{r}
+# Define a function that builds the DLM given a parameter vector (to be optimized)
+# For example, let param[1] = log(W_level), param[2] = log(V_obs) as the parameters to estimate.
+buildModel <- function(param) {
+  # Extract parameters (ensure they remain positive by exponentiating)
+  W_level <- exp(param[1])
+  V_obs_raw   <- exp(param[2])
+  # Force a maximum V_obs of 0.5:  
+  V_obs <- min(V_obs_raw, 0.5)  
+  
+  # Update copy of mod_multi with these parameters
+  mod_temp <- mod_multi  # start from current model structure
+  # Set level process variance (state 1 corresponds to level in our state ordering)
+  mod_temp$W[1, 1] <- W_level
+  # Optionally, if we included a slope (state 2), we might set mod_temp$W[2, 2] to a small value or estimate it too.
+  # (Here we keep slope variance as a small fixed value from earlier, e.g., 1e-7)
+  
+  # Set all observation variances (or just SF's) to V_obs
+  # Here we assume a common observation variance for simplicity
+  diag(mod_temp$V) <- V_obs
+  
+  return(mod_temp)
+}
+
+# Initial guesses for log-variances
+init_param <- log(c(W_level = 0.1, V_obs = 1))  # e.g., initial guess: W_level=0.1, V=1
+
+# Run MLE optimization
+mle_fit <- dlmMLE(Y, parm = init_param, build = buildModel)
+mle_fit$convergence  # 0 indicates successful convergence
+
+# Optimized parameter estimates (back-transformed)
+opt_param <- exp(mle_fit$par)
+opt_param_names <- c("W_level", "V_obs")
+names(opt_param) <- opt_param_names
+print(opt_param)
+# e.g., might output something like W_level ~ 0.05, V_obs ~ 2.3 (just as an example)
+
+# Rebuild the DLM with estimated parameters
+mod_fitted <- buildModel(mle_fit$par)
+```
+
+After MLE, `opt_param` contains the estimated variances. We then reconstruct `mod_fitted`, the DLM with these optimal values. At this stage, our model is fully specified. We have essentially **learned the variance hyperparameters** from data (a point estimate). If a fully Bayesian treatment is desired, we could set inverse-Gamma priors for these variances and use `dlmGibbsDIG` to sample their posterior distribution, but for brevity we proceed with the MLE estimates. The state estimation and forecasting that follow still use Bayesian updating (the Kalman filter), treating the variances as known.
+
+### 3.3.4 Filtering and Smoothing (State Estimation)
+
+With the fitted model, we perform Kalman filtering to estimate the latent states over time, and Kalman smoothing to refine those estimates using all data. Filtering yields one-step ahead forecasts and updated state estimates at each time, while smoothing provides retrospective estimates of states using future data as well.
+
+```{r}
+# Apply Kalman filter to the multivariate series
+filter_res <- dlmFilter(Y, mod_fitted)
+
+# Extract filtered one-step ahead forecasts and residuals (optional)
+y_hat <- filter_res$f    # one-step ahead predicted observations (matrix: same dim as Y)
+y_err <- filter_res$y - y_hat  # residuals (differences) wherever data is not NA
+
+# Extract filtered state estimates
+filtered_states_mean <- filter_res$m    # matrix of filtered state means (each row = time, col = state)
+filtered_states_var  <- filter_res$U    # variance (upper triangular form; use dlmSvd2var to get cov matrices)
+# Note: dlmFilter stores state variance in SVD form (U and D components). To get actual covariance at time n:
+final_state_cov <- dlmSvd2var(filter_res$U.R, filter_res$D.R)  # covariance of final state
+
+# Apply Rauch-Tung-Striebel smoother for retrospective state estimates
+smooth_res <- dlmSmooth(filter_res)
+
+smoothed_states_mean <- smooth_res$s    # matrix of smoothed state means (each row = time, col = state)
+smoothed_states_var  <- smooth_res$U    # (in SVD form similarly)
+```
+
+After filtering (`dlmFilter`), the object `filter_res` contains the filtered estimates. In particular, `filter_res$m` is a matrix where each row gives the mean of the state vector at the end of that day *t* (after observing *Y\[t,*\]\*). The Kalman filter naturally handled missing observations: if SF or any station had NA on a given day, the filter simply relied on the state prediction (no update for that component). The `dlmSmooth` results combine forward and backward passes to provide smoothed states `smooth_res$s`, which are more accurate estimates of the true latent states using all available data.
+
+**Interpretation Tip:** The first component of the state (Level) represents the **common temperature signal** (centered on SF). The seasonal components (next 4 states) represent the estimated seasonal cycle (Fourier coefficients). The remaining state components are the **station biases**. By examining `smoothed_states_mean`, one can see, for example, the bias states converging to values that reflect each station’s average offset relative to SF.
+
+### 3.3.5 Forecasting 3-Day, 7-Day, and 14-Day Ahead
+
+Finally, we use the fitted and filtered model to predict future temperatures. We will produce **short-term forecasts** for SF’s minimum and maximum temperature for the next 3, 7, and 14 days. The `dlmForecast` function provides the forecasted means and variances for any number of steps ahead. We focus on SF (first station), but the function actually forecasts all stations simultaneously (leveraging the state structure).
+
+```{r}
+# Forecast 14 days ahead using the filtered state as the starting point | MAX
+n_ahead <- 14
+forecast_res <- dlmForecast(filter_res, nAhead = n_ahead)
+
+# Extract forecast means for all stations
+Y_fore_mean <- forecast_res$f   # a list or matrix of forecast means (nAhead x n_stations)
+# Extract forecast covariance matrices for each forecast step
+Y_fore_cov <- forecast_res$Q    # list of length nAhead, each an (n_stations x n_stations) covariance matrix
+
+# Focus on San Francisco (column 1)
+sf_fore_mean <- if(is.list(Y_fore_mean)) {
+  # dlmForecast prior to dlm v1.1 returns a list; newer versions return matrix
+  do.call(rbind, Y_fore_mean)[,1]
+} else {
+  Y_fore_mean[,1]
+}
+
+# Compute prediction intervals for SF forecasts (e.g., 90% interval)
+alpha <- 0.10 # for 90% interval (10% in lower tail, 10% in upper tail)
+# Get standard deviation of SF forecast at each horizon
+sf_fore_sd <- sapply(Y_fore_cov, function(Sig) sqrt(Sig[1,1]))
+z <- qnorm(1 - alpha/2)  # z for central (1-alpha)% interval (e.g., 1.6449 for 90%)
+sf_fore_lower <- sf_fore_mean - z * sf_fore_sd
+sf_fore_upper <- sf_fore_mean + z * sf_fore_sd
+
+# Print the 3-day, 7-day, 14-day ahead forecast for SF Max Temperature:
+horizons <- c(3, 7, 14)
+forecast_table <- data.frame(
+  Horizon = horizons,
+  Forecast_Date = as.Date(tail(tmax_wide$date, 1)) + horizons,  # last date + horizon
+  SF_Max_Temp_Forecast = sf_fore_mean[horizons],
+  Lower90 = sf_fore_lower[horizons],
+  Upper90 = sf_fore_upper[horizons]
+)
+print(forecast_table)
+```
+
+This yields a table of SF’s forecasted max temperatures for the next 3, 7, and 14 days, along with 90% prediction intervals. (For minimum temperatures, we would repeat the modeling with `Y_min` or build a similar model for TMIN. Often TMIN and TMAX are modeled separately due to differing daily dynamics, but the procedure is analogous.)
+
+**Forecast interpretation:** The model’s forecasts combine the last estimated state (which encodes the recent level of temperature and seasonality) with its dynamics. For example, if the last observed day was unusually warm, the **global level state** $L_t$ will be higher, carrying that signal into the forecast for subsequent days (gradually decaying if the model expects mean reversion via the level’s variance). The seasonal states ensure the forecast respects the time of year (e.g., rising trend into summer, or falling into winter). The **borrowed strength** from other stations means if SF had missing data or anomalous behavior, the model still anchors to the regional pattern gleaned from neighbors.
+
+### 3.3.6 Plotting the Predictions
+
+Finally, we plot the forecast results for visualization. We show the observed SF temperature series (recent period) and the 14-day forecast with its prediction interval.
+
+```{r}
+# 1. Prepare data frames for plotting
+
+# A. Last 60 days of observed SF data:
+sf_all       <- Y[, 1]                             # SF’s full time series (max temp)
+all_dates    <- as.Date(tmax_wide$date)             # vector of all dates
+end_date     <- tail(all_dates, 1)                  # last observed date
+plot_window  <- 60                                  # how many days to show in the “past” window
+start_index  <- length(all_dates) - plot_window + 1 # index where 60‐day window begins
+
+actual_df <- data.frame(
+  date = all_dates[start_index:length(all_dates)],  # last 60 dates
+  temp = sf_all[start_index:length(all_dates)],     # corresponding SF temps
+  type = "Observed"
+)
+
+# B. 14‐day‐ahead forecast (mean):
+fore_dates   <- seq(end_date + 1, by = "day", length.out = n_ahead)
+forecast_df <- data.frame(
+  date = fore_dates,                                # next 14 dates
+  temp = sf_fore_mean,                              # predicted means
+  type = "Forecast mean"
+)
+
+# C. 90 % prediction interval (ribbon):
+ribbon_df <- data.frame(
+  date  = fore_dates,
+  lower = sf_fore_lower,
+  upper = sf_fore_upper
+)
+
+# Combine A + B into one data frame so that ggplot can map “type” to color/linetype:
+combined_df <- bind_rows(actual_df, forecast_df)
+
+# 2. Plot with ggplot2
+
+ggplot() +
+  # 2.1. Ribbon for 90% PI (fills under forecast range):
+  geom_ribbon(
+    data = ribbon_df,
+    aes(x = date, ymin = lower, ymax = upper),
+    fill = "firebrick",     # same blue as forecast‐line
+    alpha = 0.2             # 20% opacity
+  ) +
+  # 2.2. Observed SF line (last 60 days):
+  geom_line(
+    data = filter(combined_df, type == "Observed"),
+    aes(x = date, y = temp, color = type),
+    size = 1.2
+  ) +
+  # 2.3. Forecasted mean line (next 14 days):
+  geom_line(
+    data = filter(combined_df, type == "Forecast mean"),
+    aes(x = date, y = temp, color = type),
+    size = 1.2,
+    linetype = "solid"
+  ) +
+  # 2.4. (Optional) draw the PI boundaries as dashed lines:
+  geom_line(
+    data = ribbon_df,
+    aes(x = date, y = lower),
+    color = "firebrick", 
+    linetype = "dashed",
+    size = 0.8
+  ) +
+  geom_line(
+    data = ribbon_df,
+    aes(x = date, y = upper),
+    color = "firebrick", 
+    linetype = "dashed",
+    size = 0.8
+  ) +
+  # 3. Labels, scales, and theme
+  scale_color_manual(
+    name = "",
+    values = c("Observed" = "black", "Forecast mean" = "firebrick")
+  ) +
+  coord_cartesian(
+    xlim = c(all_dates[start_index], end_date + n_ahead),
+    ylim = range(c(actual_df$temp, ribbon_df$lower, ribbon_df$upper), na.rm = TRUE)
+  ) +
+  labs(
+    title = "San Francisco daily temperature interval",
+    subtitle = "Forecast recursion estimates at the 90% confidence level",
+    x = "Date",
+    y = "Temperature (°C)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# 1. Prepare data frames for Tmin plotting
+
+# A. Last 60 days of observed SF TMIN:
+sf_min_all  <- Y_min[, 1]                              # SF’s full TMIN series
+all_min_dates<- as.Date(tmin_wide$date)                # vector of all dates for TMIN
+end_min_date <- tail(all_min_dates, 1)                 # last observed date
+plot_window  <- 60                                     
+start_idx    <- length(all_min_dates) - plot_window + 1 
+
+actual_min_df <- data.frame(
+  date = all_min_dates[start_idx:length(all_min_dates)], 
+  temp = sf_min_all[start_idx:length(all_min_dates)],    
+  type = "Observed"
+)
+
+# B. 14‐day‐ahead forecast (mean TMIN):
+fore_min_dates <- seq(end_min_date + 1, by = "day", length.out = n_ahead)
+forecast_min_df <- data.frame(
+  date = fore_min_dates,
+  temp = sf_min_fore_mean,
+  type = "Forecast mean"
+)
+
+# C. 90 % prediction interval (ribbon) for TMIN:
+ribbon_min_df <- data.frame(
+  date  = fore_min_dates,
+  lower = sf_min_fore_lower,
+  upper = sf_min_fore_upper
+)
+
+# Combine observed + forecast into one data frame so we can map “type” to color/linetype:
+combined_min_df <- bind_rows(actual_min_df, forecast_min_df)
+
+# 2. Now build the ggplot
+
+ggplot() +
+  # 2.1. Ribbon for 90 % PI (fills under forecast range for TMIN):
+  geom_ribbon(
+    data = ribbon_min_df,
+    aes(x = date, ymin = lower, ymax = upper),
+    fill = "steelblue",  # choose a color that stands out (e.g. “darkorange”)
+    alpha = 0.2
+  ) +
+  # 2.2. Observed SF TMIN line (last 60 days):
+  geom_line(
+    data = filter(combined_min_df, type == "Observed"),
+    aes(x = date, y = temp, color = type),
+    size = 1.2
+  ) +
+  # 2.3. Forecasted mean TMIN line (next 14 days):
+  geom_line(
+    data = filter(combined_min_df, type == "Forecast mean"),
+    aes(x = date, y = temp, color = type),
+    size = 1.2
+  ) +
+  # 2.4. (Optional) dashed lines for the lower/upper 90 % PI:
+  geom_line(
+    data = ribbon_min_df,
+    aes(x = date, y = lower),
+    color = "steelblue", 
+    linetype = "dashed",
+    size = 0.8
+  ) +
+  geom_line(
+    data = ribbon_min_df,
+    aes(x = date, y = upper),
+    color = "steelblue", 
+    linetype = "dashed",
+    size = 0.8
+  ) +
+  # 3. Manually set colors for “Observed” vs “Forecast mean”:
+  scale_color_manual(
+    name = "",
+    values = c("Observed" = "black", "Forecast mean" = "steelblue")
+  ) +
+  # 4. Constrain the plotting window to last 60 days + 14 days of forecasts:
+  coord_cartesian(
+    xlim = c(all_min_dates[start_idx], end_min_date + n_ahead),
+    ylim = range(
+      c(actual_min_df$temp, ribbon_min_df$lower, ribbon_min_df$upper),
+      na.rm = TRUE
+    )
+  ) +
+  # 5. Labels and theme:
+  labs(
+    title = "San Francisco Daily Min Temperature: Last 60 Days + 14-Day Forecast",
+    x = "Date",
+    y = "Min Temperature (°C)"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = c(0.15, 0.85),
+    legend.background = element_rect(fill = "white", color = "grey80"),
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5)
+  )
 
 ```
+
+
+This plot illustrates the model’s fit and forecast. The black line shows the recent actual SF maximum temperatures. The blue line and band show the forecasted mean and the 90% confidence interval for the next 14 days. You can see the seasonal upward trend (if heading into summer) or downward trend (into winter) captured by the model, along with uncertainty that grows with the forecast horizon. The **other stations’ data** have informed the forecast by stabilizing the seasonal baseline and recent level: for instance, if SF had a sudden spike on the last day that was not seen in other stations, the filter might attribute part of it to transient noise, tempering the level state increase, whereas a region-wide heatwave would raise the level state more significantly.
+
+### 3.3.7 Conclusion
+
+We have developed a comprehensive multistation DLM for forecasting San Francisco’s daily minimum and maximum temperatures. The model leverages **Bayesian state-space methods** (Kalman filtering/smoothing) to combine information across multiple stations and incorporate **seasonal structure** as described by Petris et al. (2009). Key steps included specifying the state components (trend, seasonal harmonics, station biases), handling missing data inherently in the state-space framework, and using MLE (or Bayesian sampling) to infer unknown variance parameters. The resulting forecasts provide short-term predictions with uncertainty bounds, which can be invaluable for planning and analysis. This approach can be further refined (e.g., adding more harmonics, separate models for TMIN and TMAX, or including an AR term for short-term weather fluctuations), but even this basic model demonstrates the power of **borrowing strength** from related time series in a state-space setting to improve forecasts for a particular location like San Francisco.
