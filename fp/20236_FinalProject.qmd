@@ -102,7 +102,7 @@ ts_gistemp <- ts(as.vector(t(monthly_gistemp)),
                  frequency = 12)
 ```
 
-Keep in mind, our model will include a seasonal component, hence this chunk **shall not be run**
+Despite incluing a seasonal component in the DLM at §2.2, we nonetheless require a de-seasonalised time series for the HMM analysis at §2.1
 
 ```{r}
 #| label: Adjusting for seasonality
@@ -110,7 +110,6 @@ stl_decomp <- stl(ts_gistemp, s.window = "periodic", robust = TRUE)
 
 seasonal_comp <- stl_decomp$time.series[, "seasonal"]
 ts_gistemp_ds <- ts_gistemp - seasonal_comp
-
 ```
 
 ```{r}
@@ -142,12 +141,75 @@ ghcn <- ghcn %>%
 ```
 
 ```{r}
-#| label: Filtering for the San Francisco Station
+#| label: Filtering for the Bay Area stations
+#| eval: false
+#| include: false
+
+# San Francisco Downtown
 
 sf <- ghcn %>%
   filter(station_id == "USW00023272") %>%
   arrange(date)
+
+# San Francisco Golden Gate Park
+
+sf_gg <- ghcn %>%
+  filter(station_id == "US1CASF0020") %>%
+  arrange(date)
+
+# San Francisco Potrero Hill (west side)
+
+sf_ph <- ghcn %>%
+  filter(station_id == "US1CASF0017") %>%
+  arrange(date)
+
+# San Francisco Bacon Street
+
+sf_bs <- ghcn %>%
+  filter(station_id == "US1CASF0021") %>%
+  arrange(date)
+
+# Sausalito 
+
+sf_sa <- ghcn %>% 
+  filter(station_id == "US1CAMR0016") %>%
+  arrange(date)
+
+# Oakland museum
+
+sf_om <- ghcn %>% 
+  filter(station_id == "USC00046336") %>%
+  arrange(date)
 ```
+
+```{r}
+#| label: Obtaining a single list for all the stations
+
+unique(ghcn$station_name)
+
+stations <- c(
+  "KALISPELL GLACIER AP",
+  "LITTLE ROCK",
+  "MARTINSBURG E W VIRGINIA RGNL",
+  "WILMINGTON INTL AP",
+  "AUGUSTA STATE AP",
+  "HOULTON AP",
+  "PELLSTON RGNL AP",
+  "MASON CITY MUNI AP",
+  "PRESCOTT LOVE FLD",
+  "SAN FRANCISCO DWTN",
+  "LARAMIE AP",
+  "BAKER CITY AP",
+  "PASO ROBLES MUNI AP"
+)
+
+station_list <- lapply(stations, function(st) {
+  ghcn %>%
+    filter(station_name == st) %>%
+    arrange(date)
+})
+```
+
 
 ```{r}
 #| label: Converting to a daily time series object
@@ -174,7 +236,8 @@ Consider the seasonality adjusted time-series from the GISTEMP data.
 
 Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
 
-### Inizio codice HMM
+```{r}
+#| label: 2-states HMM
 
 # 1. Specify the HMM with 2 states
 
@@ -191,6 +254,11 @@ fmodel\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel\@response\[\[1
 # 4. Compute standard errors
 
 MLEse \<- standardError(fmodel) round(MLEse\$par,3)
+```
+
+
+```{r}
+#| label: 3-states HMM
 
 # 1. Specify the HMM with 3 states
 
@@ -205,11 +273,17 @@ fmodel3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients fmodel3\@response\[\
 # 4. Compute standard errors
 
 MLEse3 \<- standardError(fmodel3) round(MLEse3\$par,3)
+```
 
+
+```{r}
 #Get the estimated state for each timestep estStates \<- posterior(fmodel)
 
-plot(time(ts_gistemp_ds), estStates\$state, type = "l", ylab = "Estimated State", xlab = "Time", main = "Estimated Hidden States over Time (2-state HMM)", col = "darkred", lwd = 1.5)
+plot(time(ts_gistemp_ds), estStates\$state, type = "l", ylab = "Estimated State", xlab = "Time", main = "Estimated Hidden States over Time (2-state HMM)", col = "firebrick", lwd = 1.5)
+```
 
+
+```{r}
 # Step 1: Get estimated states
 
 estStates \<- posterior(fmodel)
@@ -229,12 +303,13 @@ estMeans \<- rep(estMean1, length(ts_gistemp_ds)) estMeans\[estStates\$state == 
 # Step 5: Plot original series and estimated means
 
 plot(ts_gistemp_ds, main = "Deseasonalized Data and HMM Estimated Means", ylab = "Temperature Anomaly", xlab = "Time", col = "gray")
+```
 
+```{r}
 # Add estimated means as points
 
-points(time(ts_gistemp_ds), estMeans, col = "blue", cex = 0.3)
+points(time(ts_gistemp_ds), estMeans, col = "steelblue", cex = 0.3)
 
-library(dplyr) library(tidyr) library(ggplot2)
 
 # Crea un data frame con la serie e lo stato stimato
 
@@ -247,11 +322,10 @@ plotobj \<- ggplot(results_df, aes(x = time_index, y = value)) + geom_line() + f
 # Mostra il grafico
 
 plot(plotobj)
+```
 
-# Load packages
 
-library(ggplot2) library(dplyr)
-
+```{r}
 # Get time and values
 
 time_vals \<- as.numeric(time(ts_gistemp_ds)) values \<- as.numeric(ts_gistemp_ds) states \<- posterior(fmodel)\$state
@@ -271,7 +345,9 @@ p \<- ggplot(df, aes(x = time, y = value, color = state, fill = state)) + geom_p
 # Show plot
 
 print(p)
+```
 
+```{r}
 # Prepare the time variable
 
 time_vals \<- as.numeric(time(ts_gistemp_ds))
@@ -283,7 +359,9 @@ df \<- data.frame( temp = as.numeric(ts_gistemp_ds), time = time_vals )
 # Specify HMM with linear trend in each state: response \~ time
 
 hmm_linear \<- depmix(temp \~ time, family = gaussian(), nstates = 2, data = df)
+```
 
+```{r}
 # Fit the model
 
 set.seed(123) fmodel_linear \<- fit(hmm_linear, verbose = FALSE)
@@ -303,12 +381,14 @@ estStates \<- posterior(fmodel_linear)
 # Compute fitted values using state-specific regression
 
 fitted_vals \<- numeric(length(df$temp)) fitted_vals[estStates$state == 1\] \<- coef1\[1\] + coef1\[2\] \* df$time[estStates$state == 1\] fitted_vals\[estStates$state == 2] <- coef2[1] + coef2[2] * df$time\[estStates\$state == 2\]
+```
 
+```{r}
 # Plot original series with fitted trend lines
 
 plot(df$time, df$temp, main = "Deseasonalized Data with State-Dependent Linear Trends", ylab = "Temperature Anomaly", xlab = "Time", type = "l", col = "gray")
 
-lines(df\$time, fitted_vals, col = "blue", lwd = 2)
+lines(df\$time, fitted_vals, col = "steelblue", lwd = 2)
 
 # Prepare the time variable
 
@@ -329,10 +409,14 @@ set.seed(123) fmodel_linear3 \<- fit(hmm_linear3, verbose = FALSE)
 # Extract estimated intercepts and slopes
 
 coef1 \<- fmodel_linear3\@response\[\[1\]\]\[\[1\]\]@parameters$coefficients \# State 1 coef2 \<- fmodel_linear3\@response\[\[2\]\]\[\[1\]\]@parameters$coefficients \# State 2 coef3 \<- fmodel_linear3\@response\[\[3\]\]\[\[1\]\]@parameters$coefficients \# State 3
+```
 
+```{r}
 # Optional: view
 
 coef1 \# (Intercept and Slope for State 1) coef2 \# (Intercept and Slope for State 2) coef3 \# (Intercept and Slope for State 3)
+```
+
 
 ## 2.2 Dynamic Linear Models
 
@@ -1508,5 +1592,13 @@ cat(sprintf("Tmax   %.3f  %.3f   %.1f%%\n", rmse_CF[2], mae_CF[2], coverage_CF[2
 # compute average half‐width of your 95% intervals
 half_width <- rowMeans((y_hi_CF - y_lo_CF)/2)
 summary(half_width)
+```
+
+### 3.3.(d) Introducing seasonality
+
+## 3.3 Introducing spatial dependence
+
+```{r}
 
 ```
+

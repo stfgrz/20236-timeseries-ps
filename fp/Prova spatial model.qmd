@@ -1,0 +1,563 @@
+---
+title: "Prova spatial model"
+author: "Stefano Graziosi"
+format: html
+editor: visual
+---
+
+# Versione 1 SCARTATA
+
+```{r}
+#| label: Necessary packages
+#| include: false
+
+library(dlm)
+library(forecast)
+
+library(mvtnorm)
+
+library(ggplot2)
+library(ggfortify)
+library(Matrix)
+
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
+library(reshape2)
+library(lubridate)
+
+library(modeltime)
+library(timetk)
+library(timechange)
+
+library(conflicted)
+conflicts_prefer(dplyr::filter)
+```
+
+## 1. Load and process
+
+```{r}
+# 1a) Load the libraries we will need:
+library(dlm)        # for Dynamic Linear Models
+library(tidyverse)  # for data manipulation (dplyr, tidyr, ggplot2, etc.)
+library(lubridate)  # for working with Dates
+
+# 1b) Read (or re‐read) the GHCN CSV (you already had this, but for clarity):
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE)
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+# 1c) Convert types, compute actual Celsius / mm, and drop the “_tenth” fields:
+ghcn <- ghcn %>%
+  mutate(
+    date  = as_date(date),                   # convert YYYY-MM-DD → Date
+    tmin  = tmin_tenthC / 10,                # tenths of °C → °C
+    tmax  = tmax_tenthC / 10,                # tenths of °C → °C
+    prcp  = prcp_tenthmm / 10                 # tenths of mm → mm
+  ) %>%
+  select(
+    station_id, station_name, latitude, longitude, elevation_m,
+    date, tmin, tmax, prcp
+  )
+
+ghcn <- subset(ghcn, date >= as.Date("1976-11-01"))
+
+# 1d) Restrict to only the 13 stations of interest (as per your problem statement):
+target_stations <- c(
+  "KALISPELL GLACIER AP",
+  "LITTLE ROCK",
+  "MARTINSBURG E W VIRGINIA RGNL",
+  "WILMINGTON INTL AP",
+  "AUGUSTA STATE AP",
+  "HOULTON AP",
+  "PELLSTON RGNL AP",
+  "MASON CITY MUNI AP",
+  "PRESCOTT LOVE FLD",
+  "SAN FRANCISCO DWTN",
+  "LARAMIE AP",
+  "BAKER CITY AP",
+  "PASO ROBLES MUNI AP"
+)
+
+ghcn_sub <- ghcn %>%
+  filter(station_name %in% target_stations)
+```
+
+```{r}
+tmin_wide <- ghcn_sub %>%
+  select(date, station_name, tmin) %>%
+  pivot_wider(
+    names_from  = station_name,
+    values_from = tmin
+  ) %>%
+  arrange(date)
+```
+
+```{r}
+tmax_wide <- ghcn_sub %>%
+  select(date, station_name, tmax) %>%
+  pivot_wider(
+    names_from  = station_name,
+    values_from = tmax
+  ) %>%
+  arrange(date)
+```
+
+```{r}
+tmin_wide <- tmin_wide %>% mutate(date = as.Date(date))
+tmax_wide <- tmax_wide %>% mutate(date = as.Date(date))
+```
+
+```{r}
+common_dates <- intersect(tmin_wide$date, tmax_wide$date)
+```
+
+
+
+
+
+```{r}
+# 1f) Now take the INTERSECTION of the two date‐sets so that TMIN and TMAX 
+
+combined <- inner_join(
+  tmin_wide,
+  tmax_wide,
+  by = "date",
+  suffix = c("_tmin", "_tmax")
+)
+
+tmin_wide2 <- combined %>%
+  select(date, ends_with("_tmin")) %>%
+  rename_with(~ str_remove(.x, "_tmin"))
+
+tmax_wide2 <- combined %>%
+  select(date, ends_with("_tmax")) %>%
+  rename_with(~ str_remove(.x, "_tmax"))
+```
+
+
+
+
+
+```{r}
+# 1g) If you want to drop any rows where ANY station is missing, you can:
+tmin_wide <- tmin_wide %>% drop_na()
+tmax_wide <- tmax_wide %>% drop_na()
+
+# 1h) Final result: we keep the date vector aside, then create two matrices:
+dates <- tmin_wide$date
+Y_tmin <- as.matrix( tmin_wide %>% select(-date) )
+Y_tmax <- as.matrix( tmax_wide %>% select(-date) )
+
+# Check dimensions:
+dim(Y_tmin)   # [number_of_days x 13]
+dim(Y_tmax)   # should match
+stopifnot( dim(Y_tmin) == dim(Y_tmax) )
+```
+
+## 2. Model‐Spec: multistation + seasonality + common latent “trend”
+
+### 2.1 A “shared trend” block
+
+```{r}
+# 2a) Build a dlm with a *single* state μ_t, observed by 13 identical “1”‐loadings.
+buildCommonTrend <- function(par) {
+  # par[1] = log(V_trend)   ; par[2] = log(W_trend)
+  V_trend <- exp(par[1])   
+  W_trend <- exp(par[2])
+  
+  # F_trend is a (13 x 1) column of 1's: each station sees the same μ_t
+  F_trend <- matrix(1, nrow = 13, ncol = 1)
+  
+  # G_trend: since it's a local‐level (order=1), G = 1 of dimension 1×1
+  G_trend <- matrix(1, nrow = 1, ncol = 1)
+  
+  # V: Observation covariance for the *common trend block*.  Here we
+  # will not set observation noise inside this block—because we'll let
+  # each station have its own observation‐variance later.  To signal that
+  # this “block” contributes no extra V, we set V_trend_block = 0 (a 13×13 zero)
+  V_block <- diag(13) * 0
+  
+  # W: 1×1 variance of μ_t.  (It's a scalar in the 1‐dim block.)
+  W_block <- matrix(W_trend, nrow = 1, ncol = 1)
+  
+  
+  
+  # Build the “dlm” object for just the common trend:
+  dlm_trend <- dlm(
+    FF   = F_trend,       # 13×1
+    V    = V_block,       # 13×13 (zero)
+    GG   = G_trend,       # 1×1
+    W    = W_block,       # 1×1
+    m0   = 0,             # prior mean of μ_0
+    C0   = 1e7            # very large prior variance for μ_0 (effectively “flat”)
+  )
+  
+  # dlm also needs to know the names/dimensions properly:
+  return(dlm_trend)
+}
+```
+
+### 2.2 A “station‐wise seasonal” block
+
+```{r}
+# 2b) Build a "2‐dim seasonal" block for a single station:
+buildOneStationSeasonal <- function(par) {
+  # par[1], par[2] = log(σ²_season_j1), log(σ²_season_j2)
+  W1 <- exp(par[1])
+  W2 <- exp(par[2])
+  
+  # G_seas_j: identity 2×2  (random‐walk evolution for the two Fourier coefficients)
+  G_seas_j <- diag(2)
+  
+  # W_seas_j: diag(W1, W2)
+  W_seas_j <- diag(c(W1, W2))
+  
+  # We do not place any V‐noise here (will be in the "obs noise" block).
+  V_seas_j <- matrix(0, nrow = 2, ncol = 2)
+  
+  # Because this is a “sub‐DLM,” but we only build it to inspect G & W.
+  # We will not feed this directly to dlm—rather, we will pick off G and W.
+  # Instead, let’s return the two matrices so we can bdiag them later.
+
+  return(
+    list(
+      G_j = G_seas_j,
+      W_j = W_seas_j
+    )
+  )
+}
+```
+
+```{r}
+# 2c) Wrapper: Given a length‐26 log‐variance‐vector 'par_seas' = length 2*13
+#     (i.e. for each station j, we have two log(σ²) parameters), build the
+#     26×26 G_block and 26×26 W_block by block‐diagonal stacking:
+
+buildAllStationsSeasonal <- function(par_seas) {
+  # Expect length(par_seas) = 2 × 13 = 26
+  if(length(par_seas) != 26) stop("par_seas must be length 26.")
+  
+  G_blocks <- list()
+  W_blocks <- list()
+  idx <- 1
+  for(j in seq_len(13)) {
+    # par_seas[c(idx,(idx+1))] are the two logs for station j
+    subset <- par_seas[c(idx, idx+1)]
+    tmp   <- buildOneStationSeasonal(subset)
+    
+    G_blocks[[j]] <- tmp$G_j  # 2×2
+    W_blocks[[j]] <- tmp$W_j  # 2×2
+    idx <- idx + 2
+  }
+  # Build block‐diagonal matrices of dimension (2*13)×(2*13):
+  G_seas_all <- do.call(bdiag, G_blocks)
+  W_seas_all <- do.call(bdiag, W_blocks)
+  
+  return(list(G_all = G_seas_all,
+              W_all = W_seas_all))
+}
+```
+
+### 2.3 The “station‐specific observation‐noise” block
+
+```{r}
+# 2d) Given a 13‐vector par_obs = log(σ²_obs₁), …, log(σ²_obs₁₃),
+#     build the 13×13 diagonal V matrix:
+
+buildObsVariance <- function(par_obs) {
+  if(length(par_obs) != 13) stop("par_obs must be length 13.")
+  Vdiag <- exp(par_obs)
+  return(diag(Vdiag))
+}
+```
+
+### 2.4 Putting all blocks together
+
+```{r}
+# 2e) Master “buildDLM” function.  Input: par_full (length=41), in order:
+#        par_full[1:2]   = log(V_trend), log(W_trend)   (but we set V_trend=0)
+#        par_full[3:28]  = 26 logs of seasonal‐evolution variances (2×13)
+#        par_full[29:41] = 13 logs of station‐obs variances
+#      Output: a single dlm object with 
+#        F = 13×27, V=13×13 diag, G=27×27, W=27×27 diag.
+
+buildDLM_allstations <- function(par_full, dates) {
+  if(length(par_full) != 41) stop("par_full must be length 41.")
+  
+  # === Unpack: ===
+  # 1-2: for μₜ block
+  par_trend <- par_full[1:2]   # (we only need par_trend[2] for W; par_trend[1] is log(V_trend)=−Inf)
+  # 3:28: for 2‐dim seasonal block, *per station*
+  par_seas  <- par_full[3:28]
+  # 29:41: for station observation variances
+  par_obs   <- par_full[29:41]
+  
+  # --- (i) Build the common‐trend sub‐dlm: ---
+  dlm_trend <- buildCommonTrend(par_trend)
+  #   This gives us dlm_trend$FF (13×1), dlm_trend$GG (1×1), dlm_trend$W (1×1).
+  
+  # --- (ii) Build the seasonal sub‐blocks: ---
+  tmp_seas <- buildAllStationsSeasonal(par_seas)
+  G_seas_all <- tmp_seas$G_all   # 26×26
+  W_seas_all <- tmp_seas$W_all   # 26×26
+  
+  # --- (iii) Build the overall G_big and W_big by block‐diagonal stacking: ---
+  G_big <- bdiag( dlm_trend$GG, G_seas_all )    # (1 + 26) × (1 + 26) = 27×27
+  W_big <- bdiag( dlm_trend$W,  W_seas_all )    # likewise 27×27
+  
+  # --- (iv) Build F_big (13×27): ---
+  #  F_big = [ 1_{13×1} | seasonal_basis_matrix ]
+  #  where seasonal_basis_matrix is 13 columns picking out the TWO seasonal states 
+  #  for each station, but we also need to plug in cos(2πt/365), sin(2πt/365) 
+  #  at each day t.  For each station j (j=1..13), we do:
+  #    row j: F_big[j, 1] = 1   (common μ_t)
+  #           F_big[j, (1 + (2*(j-1)+1)) ] = cos(2π t/365)
+  #           F_big[j, (1 + (2*(j-1)+2)) ] = sin(2π t/365)
+  #
+  #  Actually: careful: each row j corresponds to station j.  The columns of α_t are
+  #    [μ_t,  β_{1,cos,t}, β_{1,sin,t}, β_{2,cos,t}, β_{2,sin,t}, …, β_{13,cos,t}, β_{13,sin,t}].
+  #  So “station j’s seasonal states” are in α_t at indices (2*(j-1)+2) and (2*(j-1)+3),
+  #  if we count the very first element as index=1 (for μ_t).  Concretely:
+  
+  # Number of days total:
+  n_days <- length(dates)
+  # But F_big changes with time (because cos(2πt/365) depends on actual t).  
+  # So we will build a time‐varying F: a 3‐dim array of dims (13 × 27 × n_days).
+  F_big_array <- array(0, dim = c(13, 27, n_days))
+  
+  for(tt in seq_len(n_days)) {
+    tval <- as.numeric(dates[tt] - min(dates))  # “day‐index” starting at 0
+    omega <- 2 * pi * (tval %% 365) / 365        # within‐year position
+    
+    # For each station j:
+    for(j in seq_len(13)) {
+      # 1) common‐trend loading:
+      F_big_array[j, 1, tt] <- 1  
+      
+      # 2) station‐j seasonal pair (cos, sin):
+      cos_j <- cos(omega)
+      sin_j <- sin(omega)
+      # The seasonal states for station j occupy indices = 1 (for mu) + [2*(j-1)+1, 2*(j-1)+2]:
+      idx1 <- 1 + (2*(j-1) + 1)
+      idx2 <- 1 + (2*(j-1) + 2)
+      F_big_array[j, idx1, tt] <- cos_j
+      F_big_array[j, idx2, tt] <- sin_j
+    }
+  }
+  
+  # --- (v) Build V_big (13×13 diag of obs variances): ---
+  V_big <- buildObsVariance(par_obs)  # diag(exp(par_obs))
+  
+  # --- (vi) Prior mean m0 and covariance C0 for α₀ (state at time=0) ---
+  # Let’s give μ₀ ~ N(0, 10⁷) and every seasonal coefficient ~ N(0, 10⁴):
+  m0_big <- rep(0, 27)
+  C0_big <- diag( c(1e7, rep(1e4, 26)) )
+  
+  # Finally, put everything into one dlm object.
+  mod <- dlm(
+    FF   = F_big_array,   # time‐varying: 13×27×n_days
+    V    = V_big,         # 13×13
+    GG   = as.matrix(G_big), # 27×27
+    W    = as.matrix(W_big), # 27×27
+    m0   = m0_big,          
+    C0   = C0_big
+  )
+  return(mod)
+}
+```
+
+## 3. Estimating the unknown variances via dlmMLE
+
+```{r}
+# 3a) Initial guesses for the 41 logs:
+init_par <- numeric(41)
+init_par[1] <- log(1e-12)  # effectively fix V_trend ≈ 0
+init_par[2] <- log(0.1^2)  # W_trend ~ 0.01
+init_par[3:28] <- log(rep(0.01^2, 13*2))  # W_seas_j1 ~ 0.0001, W_seas_j2 ~ 0.0001
+init_par[29:41] <- log(rep(2^2, 13))  # σ_obs_j = 2°C  → var = 4
+
+# 3b) Define the “objective” function to minimize (−logLik):
+dlm_nLL <- function(par) {
+  # Build the DLM
+  mod <- buildDLM_allstations(par, dates)
+  # Run the Kalman filter
+  ff  <- dlmFilter(Y_tmin, mod)
+  # -log‐likelihood is reported by dlmLL
+  return(-dlmLL(ff))
+}
+
+conflicts_prefer(Matrix::bdiag)
+
+# 3c) Optimize via dlmMLE
+fit_tmin <- dlmMLE(
+  y      = Y_tmin, 
+  parm   = init_par, 
+  build  = function(param) buildDLM_allstations(param, dates),
+  lower  = rep(log(1e-6), 41),  # keep all variances ≥ 1e-6
+  upper  = rep(log(1e2),  41),  # keep all variances ≤ 1e2
+  control = list(maxit = 200)
+)
+
+conflicts_prefer(dlm::bdiag)
+
+fit_tmin$convergence
+# if 0, good. fit_tmin$par is the MLE of the 41 logs.
+
+# 3d) Build the *fitted* model for TMIN:
+mod_tmin_fitted <- buildDLM_allstations(fit_tmin$par, dates)
+
+# Do the exact same steps for TMAX:
+dlm_nLL_max <- function(par) {
+  mod <- buildDLM_allstations(par, dates)
+  ff  <- dlmFilter(Y_tmax, mod)
+  return(-dlmLL(ff))
+}
+
+fit_tmax <- dlmMLE(
+  y      = Y_tmax,
+  parm   = init_par,
+  build  = function(param) buildDLM_allstations(param, dates),
+  lower  = rep(log(1e-6), 41),
+  upper  = rep(log(1e2),  41),
+  control = list(maxit = 200)
+)
+mod_tmax_fitted <- buildDLM_allstations(fit_tmax$par, dates)
+```
+
+## 4. Filtering, smoothing, and one‐step forecast
+
+```{r}
+# 4a) Kalman filter on TMIN:
+filt_tmin <- dlmFilter(Y_tmin, mod_tmin_fitted)
+
+# 4b) Extract the one‐step‐ahead forecasts for day t: 
+#      a_t = E(α_t | y_{1:(t−1)}) 
+#      f_t = E(Y_t | y_{1:(t−1)})   i.e. the (13-dimensional) one‐step forecast 
+one_step_forecasts_tmin <- dropFirst(filt_tmin$f)  
+#   dims: [N × 13], where row t = forecasted Y_t at time t, using data up to t−1.
+
+# 4c) Filtering residuals (innovations): 
+#      v_t = Y_t − f_t 
+innovations_tmin <- residuals(filt_tmin, type = "raw")
+
+# 4d) Now run the smoother, to get α̂_{t|T} for all t = 1..N:
+smooth_tmin <- dlmSmooth(filt_tmin)
+
+# 4e) The smoothed state matrix (N+1 × 27).  The first row is α̂_{0|T} (we ignore),
+#      the second row is α̂_{1|T}, etc., up to α̂_{N|T}.  So drop the first:
+alpha_sm_tmin <- smooth_tmin$s[-1, ]   # a (N × 27) matrix.
+
+# 4f) Extract the **common trend** μ̂_t from the smoothed states:
+#      that's column 1 of alpha_sm_tmin:
+mu_hat_tmin <- alpha_sm_tmin[, 1]      # length N
+
+# 4g) Extract each station’s seasonal estimate β_{j,cos,t}, β_{j,sin,t}:
+seasonal_hat_tmin <- list()
+for(j in seq_len(13)) {
+  idx1 <- (2*(j-1) + 2)
+  idx2 <- (2*(j-1) + 3)
+  seasonal_hat_tmin[[j]] <- alpha_sm_tmin[, c(idx1, idx2)] %*%
+    cbind(cos(2*pi * ((as.numeric(dates - min(dates))) %% 365)/365),
+          sin(2*pi * ((as.numeric(dates - min(dates))) %% 365)/365)
+         )
+  # This gives actual seasonal reconstruction s_{j,t} = [β_{j,cos,t}  β_{j,sin,t}] ⋅ [cos; sin].
+}
+
+# 4h) One‐day‐ahead forecast for TMIN at the last time:
+#     We can use dlmForecast() or else the built‐in predict function.
+fcst_tmin_1step <- dlmForecast(
+  filt_tmin,
+  nAhead = 1
+)
+# fcst_tmin_1step$f is a (1 × 13) vector of E(Y_{N+1} | data up to day N).
+# fcst_tmin_1step$Q is the (1 × 1 list containing) covariance matrix of forecast errors.
+
+# 4i) Similarly, if you want a 7‐day forecast:
+fcst_tmin_7 <- dlmForecast(filt_tmin, nAhead = 7)
+# which gives 7 rows of (13‐dim) forecasts.  
+```
+
+```{r}
+filt_tmax <- dlmFilter(Y_tmax, mod_tmax_fitted)
+smooth_tmax <- dlmSmooth(filt_tmax)
+alpha_sm_tmax <- smooth_tmax$s[-1, ]    # (N × 27)
+mu_hat_tmax <- alpha_sm_tmax[,1]
+# station‐wise seasonal reconstructions:
+seasonal_hat_tmax <- list()
+for(j in seq_len(13)) {
+  idx1 <- (2*(j-1) + 2); idx2 <- (2*(j-1) + 3)
+  seasonal_hat_tmax[[j]] <- alpha_sm_tmax[, c(idx1, idx2)] %*%
+    cbind(cos(2*pi * ((as.numeric(dates - min(dates))) %% 365)/365),
+          sin(2*pi * ((as.numeric(dates - min(dates))) %% 365)/365)
+         )
+}
+# One‐step‐ahead forecast for TMAX tomorrow:
+fcst_tmax_1step <- dlmForecast(filt_tmax, nAhead = 1)
+```
+
+## 5. Inspecting “borrowing strength” & the common latent trend for SF
+
+```{r}
+# 5a) Identify which column is “San Francisco” in your 13 columns:
+station_names <- colnames(tmin_wide)[-1]   # this is a character vector of length 13
+station_names
+# Suppose "SAN FRANCISCO DWTN" is column number k_sf:
+k_sf <- which(station_names == "SAN FRANCISCO DWTN")
+
+# 5b) Extract SF’s smoothed series vs. SF’s smoothed seasonal + common trend:
+sf_smoothed_trend <- mu_hat_tmin  # common trend
+sf_smoothed_season <- seasonal_hat_tmin[[k_sf]]
+sf_combined_smoothed <- sf_smoothed_trend + sf_smoothed_season
+
+# 5c) Plot observed vs. smoothed:
+df_plot <- tibble(
+  date = dates,
+  observed_sf_tmin   = Y_tmin[, k_sf],
+  common_trend       = mu_hat_tmin,
+  sf_seasonal        = sf_smoothed_season,
+  sf_combined        = sf_combined_smoothed
+)
+
+library(ggplot2)
+ggplot(df_plot, aes(x = date)) +
+  geom_line(aes(y = observed_sf_tmin),    color = "steelblue") +
+  geom_line(aes(y = common_trend),        color = "orange", linetype = "dashed") +
+  geom_line(aes(y = sf_combined),         color = "forestgreen",  linetype = "solid") +
+  labs(
+    title = "San Francisco TMIN: Observed vs. Common Trend vs. Trend+Season",
+    y = "Temperature (°C)"
+  ) +
+  theme_minimal()
+
+```
+
+## 6. Making short‐term predictions for SF
+
+```{r}
+# 6a) One‐step forecast (TMIN) for tomorrow in SF:
+fcst1_tmin_sf <- fcst_tmin_1step$f[1, k_sf]   # point forecast
+fcst1_tmin_sf_se <- sqrt(fcst_tmin_1step$Q[,,1][k_sf, k_sf])  # st. dev
+
+# 6b) 7‐day forecast (TMIN) for SF:
+fcst7_tmin_sf <- fcst_tmin_7$f[ , k_sf]      # 7 rows, one per day
+# The corresponding Q is an array; you can extract diagonals for each day as se’s.
+```
+
+```{r}
+fcst1_tmax_sf <- fcst_tmax_1step$f[1, k_sf]
+fcst1_tmax_sf_se <- sqrt(fcst_tmax_1step$Q[,,1][k_sf, k_sf])
+```
