@@ -3400,3 +3400,1045 @@ This plot illustrates the model's fit and forecast. The black line shows the rec
 ### 3.3.7 Conclusion
 
 We have developed a comprehensive multistation DLM for forecasting San Francisco's daily minimum and maximum temperatures. The model leverages **Bayesian state-space methods** (Kalman filtering/smoothing) to combine information across multiple stations and incorporate **seasonal structure** as described by Petris et al. (2009). Key steps included specifying the state components (trend, seasonal harmonics, station biases), handling missing data inherently in the state-space framework, and using MLE (or Bayesian sampling) to infer unknown variance parameters. The resulting forecasts provide short-term predictions with uncertainty bounds, which can be invaluable for planning and analysis. This approach can be further refined (e.g., adding more harmonics, separate models for TMIN and TMAX, or including an AR term for short-term weather fluctuations), but even this basic model demonstrates the power of **borrowing strength** from related time series in a state-space setting to improve forecasts for a particular location like San Francisco.
+
+Same model as before
+
+```{r}
+# Load required packages
+library(dlm)        # for Dynamic Linear Models
+library(tidyverse)  # for data manipulation (dplyr, tidyr, ggplot2, etc.)
+library(lubridate)  # for working with Dates
+
+# 1) Read the GHCN CSV
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE)
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+# 2) Convert types, compute actual Celsius/mm, and drop the “_tenth” fields
+ghcn <- ghcn %>%
+  mutate(
+    date = as_date(date),          # convert YYYY-MM-DD → Date
+    tmin = tmin_tenthC / 10,       # tenths of °C → °C
+    tmax = tmax_tenthC / 10,       # tenths of °C → °C
+    prcp = prcp_tenthmm / 10       # tenths of mm → mm
+  ) %>%
+  select(
+    station_id, station_name, latitude, longitude, elevation_m,
+    date, tmin, tmax, prcp
+  )
+
+# 3) Restrict to dates ≥ 1976-11-01
+ghcn <- filter(ghcn, date >= as.Date("1976-11-01"))
+
+# 4) Define the subset of stations to keep
+#    (San Francisco + Paso Robles + Baker City + Prescott)
+target_stations <- c(
+  "SAN FRANCISCO DWTN",
+  "PASO ROBLES MUNI AP",
+  "BAKER CITY AP",
+  "PRESCOTT LOVE FLD"
+)
+
+# 5) Filter ghcn to those stations only
+ghcn_sub <- filter(ghcn, station_name %in% target_stations)
+
+# 6) Pivot to wide format: separate wide tables for TMIN and TMAX
+tmin_wide <- ghcn_sub %>%
+  select(date, station_name, tmin) %>%
+  pivot_wider(names_from = station_name, values_from = tmin) %>%
+  arrange(date)
+
+tmax_wide <- ghcn_sub %>%
+  select(date, station_name, tmax) %>%
+  pivot_wider(names_from = station_name, values_from = tmax) %>%
+  arrange(date)
+
+# 7) Extract the matrices of values (excluding the Date column)
+Y_min <- as.matrix(tmin_wide[,-1])   # rows: dates, cols: stations
+Y_max <- as.matrix(tmax_wide[,-1])
+
+# 8) Set row names as dates (optional)
+rownames(Y_min) <- tmin_wide$date
+rownames(Y_max) <- tmax_wide$date
+
+# 9) Dates vector for splitting
+all_dates <- as.Date(tmax_wide$date)
+
+# 10) Define train/test split:
+#     training = all dates < 2024-12-01; testing = dates in December 2024
+train_idx <- which(all_dates < as.Date("2024-12-01"))
+test_idx  <- which(all_dates >= as.Date("2024-12-01") & all_dates < as.Date("2025-01-01"))
+
+# 11) Proceed with Y_max (daily max temp)
+Y <- Y_max
+
+# 12) Split Y into train and test
+Y_train <- Y[train_idx, ]
+Y_test  <- Y[test_idx, ]
+
+# 13) Reorder columns so that “SAN FRANCISCO DWTN” is first
+station_names <- colnames(Y)
+sf_idx <- which(station_names == "SAN FRANCISCO DWTN")
+new_order <- c(sf_idx, setdiff(seq_along(station_names), sf_idx))
+Y_train <- Y_train[ , new_order]
+Y_test  <- Y_test[ , new_order]
+station_names <- station_names[new_order]
+
+# --- 3.3.2 Model Specification: State-Space Structure ---
+
+# 14) Build base model for common trend + seasonal component (single-output DLM)
+base_trend <- dlmModPoly(order = 2, dV = 0, dW = c(1e-7, 1e-7))
+base_season <- dlmModTrig(s = 365, q = 2, dV = 0, dW = 1e-5)
+base_model <- base_trend + base_season
+
+# 15) Inspect size of base state vector
+m_base <- ncol(base_model$FF)  # e.g., 6 states for (level, slope, 2 harmonics × 2)
+
+# 16) Number of bias states (for stations 2..4)
+n_stations <- ncol(Y_train)
+n_bias <- n_stations - 1
+total_states <- m_base + n_bias
+
+# 17) Build observation matrix FF_multi (n_stations × total_states)
+FF_multi <- matrix(0, nrow = n_stations, ncol = total_states)
+FF_common <- base_model$FF  # 1 × m_base
+for (i in 1:n_stations) {
+  FF_multi[i, 1:m_base] <- FF_common
+}
+if (n_bias > 0) {
+  for (j in 2:n_stations) {
+    bias_index <- m_base + (j - 1)
+    FF_multi[j, bias_index] <- 1
+  }
+}
+
+# 18) Build transition matrix GG_multi (total_states × total_states)
+GG_multi <- diag(1, total_states)
+GG_multi[1:m_base, 1:m_base] <- base_model$GG
+
+# 19) Build system-noise covariance W_multi
+W_multi <- matrix(0, nrow = total_states, ncol = total_states)
+W_multi[1:m_base, 1:m_base] <- base_model$W
+if (n_bias > 0) {
+  bias_var <- 1e-7
+  diag(W_multi[(m_base + 1):total_states, (m_base + 1):total_states]) <- bias_var
+}
+
+# 20) Build observation-noise covariance V_multi (start with identity)
+V_multi <- diag(1, n_stations)
+
+# 21) Initial state prior (m0 and C0)
+m0 <- rep(0, total_states)
+if (n_bias > 0) {
+  sf_initial <- Y_train[1, 1]
+  for (j in 2:n_stations) {
+    if (!is.na(Y_train[1, j]) && !is.na(sf_initial)) {
+      m0[m_base + (j - 1)] <- Y_train[1, j] - sf_initial
+    } else {
+      m0[m_base + (j - 1)] <- 0
+    }
+  }
+}
+C0 <- diag(1e6, total_states)
+
+# 22) Assemble the multistation DLM (template)
+mod_multi <- dlm(m0 = m0, C0 = C0, FF = FF_multi, V = V_multi, GG = GG_multi, W = W_multi)
+
+# --- 3.3.3 Bayesian Parameter Inference (Variance Estimation) on Training Data ---
+
+# 23) Define a builder function to update W_level and V_obs
+buildModel <- function(param) {
+  W_level   <- exp(param[1])
+  V_obs_raw <- exp(param[2])
+  V_obs     <- min(V_obs_raw, 0.5)
+
+  mod_temp <- mod_multi
+  # Update level variance (state 1)
+  mod_temp$W[1, 1] <- W_level
+  # Keep slope & seasonal variances at their small initial values (from mod_multi)
+
+  # Set common observation variance for all stations
+  diag(mod_temp$V) <- V_obs
+  return(mod_temp)
+}
+
+# 24) Initial guesses (log-scale)
+init_param <- log(c(W_level = 0.1, V_obs = 1))
+
+# 25) Run MLE optimization on Y_train
+mle_fit <- dlmMLE(Y_train, parm = init_param, build = buildModel)
+stopifnot(mle_fit$convergence == 0)
+
+# 26) Back-transform optimized parameters
+opt_param <- exp(mle_fit$par)
+names(opt_param) <- c("W_level", "V_obs")
+print(opt_param)
+
+# 27) Rebuild DLM using estimated variances
+mod_fitted <- buildModel(mle_fit$par)
+
+# --- 3.3.4 Filtering, Smoothing, and Within-Sample Forecast Accuracy ---
+
+# 28) Perform Kalman filtering on training data
+filter_res_train <- dlmFilter(Y_train, mod_fitted)
+
+# 29) One-step-ahead forecasts on train (fitted values)
+y_hat_train <- filter_res_train$f   # matrix: [n_train × n_stations]
+y_true_train <- Y_train             # actual train observations
+
+# 30) Compute within-sample residuals for SF (column 1)
+sf_hat_train  <- y_hat_train[, 1]
+sf_true_train <- y_true_train[, 1]
+sf_resid_train <- sf_true_train - sf_hat_train
+
+# 31) Remove any NA rows before computing accuracy
+valid_idx_train <- which(!is.na(sf_resid_train))
+sf_resid_train <- sf_resid_train[valid_idx_train]
+sf_true_train2 <- sf_true_train[valid_idx_train]
+sf_hat_train2  <- sf_hat_train[valid_idx_train]
+
+# 32) Compute training RMSE and MAE for SF
+rmse_train <- sqrt(mean((sf_true_train2 - sf_hat_train2)^2))
+mae_train  <- mean(abs(sf_true_train2 - sf_hat_train2))
+cat("Within-sample (train) SF RMSE =", round(rmse_train, 3), "\n")
+cat("Within-sample (train) SF MAE  =", round(mae_train, 3), "\n")
+
+# 33) (Optional) Kalman smoothing on training data
+smooth_res_train <- dlmSmooth(filter_res_train)
+smoothed_states_train <- smooth_res_train$s
+
+# --- 3.3.5 Forecasting on Test Month (December 2024) and Test Accuracy ---
+
+# 34) Number of test days in December 2024
+n_test <- nrow(Y_test)
+
+# 35) Forecast n_test steps ahead from end of training
+forecast_res_test <- dlmForecast(filter_res_train, nAhead = n_test)
+
+# 36) Extract forecasted means for all stations (n_test × n_stations)
+if (is.list(forecast_res_test$f)) {
+  Y_fore_test_mat <- do.call(rbind, forecast_res_test$f)
+} else {
+  Y_fore_test_mat <- forecast_res_test$f
+}
+
+# 37) True SF values in test set
+sf_true_test <- Y_test[, 1]
+
+# 38) Extract SF forecast (column 1)
+sf_fore_test <- Y_fore_test_mat[, 1]
+
+# 39) Compute test residuals & test accuracy (exclude any NA if present)
+valid_idx_test <- which(!is.na(sf_true_test) & !is.na(sf_fore_test))
+sf_true_test2 <- sf_true_test[valid_idx_test]
+sf_fore_test2 <- sf_fore_test[valid_idx_test]
+
+# 40) RMSE and MAE on test (December 2024)
+rmse_test <- sqrt(mean((sf_true_test2 - sf_fore_test2)^2))
+mae_test  <- mean(abs(sf_true_test2 - sf_fore_test2))
+cat("Out-of-sample (Dec 2024) SF RMSE =", round(rmse_test, 3), "\n")
+cat("Out-of-sample (Dec 2024) SF MAE  =", round(mae_test, 3), "\n")
+
+# 41) (Optional) Compute 90% prediction intervals on test
+sf_fore_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1, 1]))
+z <- qnorm(0.95)
+sf_fore_lower_test <- sf_fore_test - z * sf_fore_sd_test
+sf_fore_upper_test <- sf_fore_test + z * sf_fore_sd_test
+
+# --- 3.3.6 Plotting Forecast vs. Actual for December 2024 (SF Max Temp) ---
+
+# 42) Prepare a data frame for December 2024
+test_dates <- all_dates[test_idx]
+plot_test_df <- tibble(
+  date       = test_dates[valid_idx_test],
+  actual     = sf_true_test2,
+  forecast   = sf_fore_test2,
+  lower90    = sf_fore_lower_test[valid_idx_test],
+  upper90    = sf_fore_upper_test[valid_idx_test]
+)
+
+# 43) Plot actual vs. forecast with prediction intervals
+library(ggplot2)
+ggplot(plot_test_df, aes(x = date)) +
+  geom_ribbon(aes(ymin = lower90, ymax = upper90), fill = "firebrick", alpha = 0.2) +
+  geom_line(aes(y = actual),   color = "orange",   size = 0.8) +
+  geom_line(aes(y = forecast), color = "firebrick", size = 0.8) +
+  labs(
+    title    = "SF Max Temperature: December 2024 Actual vs. Forecast",
+    subtitle = sprintf("Test RMSE = %.2f, MAE = %.2f", rmse_test, mae_test),
+    x        = "Date",
+    y        = "Max Temperature (°C)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title    = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic")
+  )
+
+# --- (Optional) Repeat within-sample and out-of-sample accuracy for TMIN by substituting Y_min in place of Y_max ---
+
+```
+
+```{r}
+# Install and load required packages
+install.packages(c("dlm", "tidyverse", "lubridate", "geosphere"))
+
+library(dlm)         # for Dynamic Linear Models
+library(tidyverse)   # for data manipulation (dplyr, tidyr, ggplot2, etc.)
+library(lubridate)   # for working with Dates
+library(geosphere)   # for distance computations
+
+# 1) Read the GHCN CSV
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE)
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+# 2) Convert types, compute actual Celsius/mm, drop "_tenth" fields
+ghcn <- ghcn %>%
+  mutate(
+    date = as_date(date),          # YYYY-MM-DD → Date
+    tmin = tmin_tenthC / 10,       # tenths °C → °C
+    tmax = tmax_tenthC / 10,       # tenths °C → °C
+    prcp = prcp_tenthmm / 10       # tenths mm → mm
+  ) %>%
+  select(
+    station_id, station_name, latitude, longitude, elevation_m,
+    date, tmin, tmax, prcp
+  )
+
+# 3) Restrict to dates ≥ 1976-11-01
+ghcn <- filter(ghcn, date >= as.Date("1976-11-01"))
+
+# 4) Subset to four stations
+target_stations <- c(
+  "SAN FRANCISCO DWTN",
+  "PASO ROBLES MUNI AP",
+  "BAKER CITY AP",
+  "PRESCOTT LOVE FLD"
+)
+ghcn_sub <- filter(ghcn, station_name %in% target_stations)
+
+# 5) Pivot to wide format for Tmax
+tmax_wide <- ghcn_sub %>%
+  select(date, station_name, tmax) %>%
+  pivot_wider(names_from = station_name, values_from = tmax) %>%
+  arrange(date)
+
+# 6) Extract matrix of Tmax values
+Y_max <- as.matrix(tmax_wide[,-1])
+rownames(Y_max) <- tmax_wide$date
+
+# 7) Dates vector
+all_dates <- as.Date(tmax_wide$date)
+
+# 8) Define train/test split:
+#    train = all dates < 2024-12-01; test = dates in December 2024
+train_idx <- which(all_dates < as.Date("2024-12-01"))
+test_idx  <- which(all_dates >= as.Date("2024-12-01") & all_dates < as.Date("2025-01-01"))
+
+# 9) Reorder columns so SF is first
+station_names <- colnames(Y_max)
+sf_idx <- which(station_names == "SAN FRANCISCO DWTN")
+new_order <- c(sf_idx, setdiff(seq_along(station_names), sf_idx))
+Y_max <- Y_max[ , new_order]
+station_names <- station_names[new_order]
+
+# 10) Station coordinates in same order
+station_coords <- ghcn_sub %>%
+  select(station_name, latitude, longitude) %>%
+  distinct() %>%
+  slice(match(station_names, station_name))
+
+# 11) Compute distances (km) from SF
+sf_coord <- station_coords %>%
+  filter(station_name == "SAN FRANCISCO DWTN") %>%
+  select(longitude, latitude) %>%
+  as.numeric()
+coords_mat <- station_coords %>% select(longitude, latitude) %>% as.matrix()
+dist_m <- distHaversine(coords_mat, sf_coord)
+dist_km <- dist_m / 1000
+
+# 12) Spatially varying loadings λ_j = exp(–d_j / ρ)
+rho <- 500
+lambda <- exp(- dist_km / rho)  # length = 4
+
+# 13) Build base DLM for latent factor (trend + seasonal)
+base_trend <- dlmModPoly(order = 2, dV = 0, dW = c(1e-7, 1e-7))
+base_season <- dlmModTrig(s = 365, q = 2, dV = 0, dW = 1e-5)
+base_model <- base_trend + base_season
+m_base <- ncol(base_model$FF)   # should be 6
+
+# 14) Observation matrix F_spatial (4 × 6): each row = λ_j * base_model$FF
+n_stations <- length(lambda)    # 4
+F_spatial <- matrix(0, nrow = n_stations, ncol = m_base)
+for (j in 1:n_stations) {
+  F_spatial[j, ] <- lambda[j] * base_model$FF
+}
+
+# 15) Transition matrix G_spatial (6 × 6)
+G_spatial <- base_model$GG
+
+# 16) Templates for W & V (we will replace W[1,1] and diag(V))
+W_template <- base_model$W
+V_template <- diag(1, n_stations)
+
+# 17) Prior for factor state
+m0_spatial <- rep(0, m_base)
+C0_spatial <- diag(1e6, m_base)
+
+# 18) Builder function for MLE on training data
+buildSpatialModel <- function(param) {
+  W_level   <- exp(param[1])
+  V_obs_raw <- exp(param[2])
+  V_obs     <- min(V_obs_raw, 0.5)
+
+  Wt <- W_template
+  Wt[1,1] <- W_level
+  Vt <- diag(V_obs, n_stations)
+
+  dlm(
+    m0 = m0_spatial,
+    C0 = C0_spatial,
+    FF = F_spatial,
+    V  = Vt,
+    GG = G_spatial,
+    W  = Wt
+  )
+}
+
+# 19) Split Y_max into training and testing sets
+Y_train <- Y_max[train_idx, ]
+Y_test  <- Y_max[test_idx, ]
+
+# 20) MLE on Y_train
+init_param <- log(c(W_level = 0.1, V_obs = 1))
+mle_fit_spatial <- dlmMLE(Y_train, parm = init_param, build = buildSpatialModel)
+stopifnot(mle_fit_spatial$convergence == 0)
+
+opt_param_spatial <- exp(mle_fit_spatial$par)
+names(opt_param_spatial) <- c("W_level", "V_obs")
+print(opt_param_spatial)
+
+# 21) Rebuild fitted model on training data
+mod_spatial_fitted <- buildSpatialModel(mle_fit_spatial$par)
+
+# 22) Kalman filtering on training data
+filter_res_train <- dlmFilter(Y_train, mod_spatial_fitted)
+
+# 23) One‐step ahead forecasts on train
+y_hat_train <- filter_res_train$f                # [n_train × 4]
+sf_hat_train  <- y_hat_train[, 1]                 # SF predictions
+sf_true_train <- Y_train[, 1]                     # SF actuals
+
+# 24) Within‐sample accuracy (RMSE, MAE) for SF
+resid_train <- sf_true_train - sf_hat_train
+valid_idx_train <- which(!is.na(resid_train))
+rmse_train <- sqrt(mean((sf_true_train[valid_idx_train] - sf_hat_train[valid_idx_train])^2))
+mae_train  <- mean(abs(sf_true_train[valid_idx_train] - sf_hat_train[valid_idx_train]))
+cat("Within‐sample (train) SF RMSE =", round(rmse_train, 3), "\n")
+cat("Within‐sample (train) SF MAE  =", round(mae_train, 3), "\n")
+
+# 25) Forecast on test (December 2024)
+n_test <- nrow(Y_test)
+forecast_res_test <- dlmForecast(filter_res_train, nAhead = n_test)
+
+# 26) Extract SF forecast for test
+if (is.list(forecast_res_test$f)) {
+  Y_fore_test_mat <- do.call(rbind, forecast_res_test$f)
+} else {
+  Y_fore_test_mat <- forecast_res_test$f
+}
+sf_fore_test <- Y_fore_test_mat[, 1]
+sf_true_test <- Y_test[, 1]
+
+# 27) Out‐of‐sample accuracy (RMSE, MAE) for SF
+valid_idx_test <- which(!is.na(sf_true_test) & !is.na(sf_fore_test))
+sf_true_test2 <- sf_true_test[valid_idx_test]
+sf_fore_test2 <- sf_fore_test[valid_idx_test]
+
+rmse_test <- sqrt(mean((sf_true_test2 - sf_fore_test2)^2))
+mae_test  <- mean(abs(sf_true_test2 - sf_fore_test2))
+cat("Out‐of‐sample (Dec 2024) SF RMSE =", round(rmse_test, 3), "\n")
+cat("Out‐of‐sample (Dec 2024) SF MAE  =", round(mae_test, 3), "\n")
+
+# 28) 90% PI for SF forecasts on test
+sf_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
+z90 <- qnorm(0.95)
+sf_lower_test <- sf_fore_test - z90 * sf_sd_test
+sf_upper_test <- sf_fore_test + z90 * sf_sd_test
+
+# 29) Plot last 60 days of training (before Dec 2024), actual Dec 2024, and Dec 2024 forecasts for SF
+
+# Determine indices for last 60 training days:
+last_train_date <- as.Date("2024-11-30")
+last_train_idx <- which(all_dates == last_train_date)
+start_plot <- max(1, last_train_idx - 59)
+
+# Data frame for last 60 days of training (observed)
+train_last60_df <- tibble(
+  date = all_dates[start_plot:last_train_idx],
+  temp = sf_true_train[start_plot:length(train_idx)],
+  type = "Observed (Train)"
+)
+
+# Data frame for actual December 2024
+dec2024_dates <- all_dates[test_idx]
+actual_dec_df <- tibble(
+  date = dec2024_dates,
+  temp = sf_true_test,
+  type = "Observed (Dec 2024)"
+)
+
+# Data frame for December 2024 forecasts
+forecast_dec_df <- tibble(
+  date = dec2024_dates,
+  temp = sf_fore_test,
+  type = "Forecast (Dec 2024)"
+)
+
+# Combine all three
+plot_df <- bind_rows(train_last60_df, actual_dec_df, forecast_dec_df)
+
+# 30) Plot everything with 90% prediction interval for Dec 2024
+ribbon_dec_df <- tibble(
+  date  = dec2024_dates,
+  lower = sf_lower_test,
+  upper = sf_upper_test
+)
+
+library(ggplot2)
+ggplot() +
+  geom_ribbon(data = ribbon_dec_df,
+              aes(x = date, ymin = lower, ymax = upper),
+              fill = "steelblue", alpha = 0.2) +
+  geom_line(data = plot_df,
+            aes(x = date, y = temp, color = type, linetype = type),
+            size = 0.8) +
+  scale_color_manual(
+    values = c(
+      "Observed (Train)"     = "orange",
+      "Observed (Dec 2024)"  = "black",
+      "Forecast (Dec 2024)"  = "steelblue"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Observed (Train)"     = "solid",
+      "Observed (Dec 2024)"  = "solid",
+      "Forecast (Dec 2024)"  = "dashed"
+    )
+  ) +
+  labs(
+    title    = "SF Tmax: Spatial‐Factor DLM — Training vs. December 2024",
+    subtitle = sprintf("Train RMSE=%.2f, MAE=%.2f | Test RMSE=%.2f, MAE=%.2f",
+                       rmse_train, mae_train, rmse_test, mae_test),
+    x        = "Date",
+    y        = "Max Temperature (°C)",
+    color    = "",
+    linetype = ""
+  ) +
+  coord_cartesian(
+    xlim = c(all_dates[start_plot], dec2024_dates[length(dec2024_dates)]),
+    ylim = range(
+      c(train_last60_df$temp, actual_dec_df$temp, ribbon_dec_df$lower, ribbon_dec_df$upper),
+      na.rm = TRUE
+    )
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# (Assumes Y_train, filter_res_train, sf_hat_train, and all_dates/train_idx are already defined)
+
+# 1) Extract in‐sample residuals for each station
+resid_matrix <- Y_train - filter_res_train$f   # [n_train × 4]
+colnames(resid_matrix) <- station_names
+
+# 2) Convert residuals to ts objects (optional)
+dates_train <- all_dates[train_idx]
+resid_ts <- lapply(1:ncol(resid_matrix), function(j) {
+  ts(resid_matrix[, j],
+     start = c(year(dates_train[1]), yday(dates_train[1])),
+     frequency = 365)
+})
+names(resid_ts) <- station_names
+
+# 3) Choose SF residuals for diagnostics
+sf_resid <- resid_matrix[, "SAN FRANCISCO DWTN"]
+
+# 4) Time‐series plot of SF residuals
+plot(dates_train, sf_resid, type = "l", col = "darkgray",
+     main = "SF In‐Sample Residuals over Time",
+     xlab = "Date", ylab = "Residual (°C)")
+
+# 5) Histogram + density overlay
+hist(sf_resid, breaks = 30, freq = FALSE,
+     main = "Histogram of SF Residuals (Train)",
+     xlab = "Residual (°C)", col = "lightblue")
+lines(density(sf_resid, na.rm = TRUE), col = "darkblue", lwd = 2)
+
+# 6) QQ‐plot vs Normal
+qqnorm(sf_resid, main = "QQ‐Plot of SF Residuals (Train)")
+qqline(sf_resid, col = "red", lwd = 2)
+
+# 7) ACF and PACF of SF residuals
+par(mar = c(4, 4, 2, 1))
+acf(sf_resid, na.action = na.pass, main = "ACF of SF Residuals")
+pacf(sf_resid, na.action = na.pass, main = "PACF of SF Residuals")
+par(mfrow = c(1,1))
+
+# 8) Ljung–Box test for autocorrelation at various lags
+for (L in c(7, 14, 21, 28)) {
+  lb <- Box.test(sf_resid, lag = L, type = "Ljung-Box", fitdf = 0)
+  cat(sprintf("Ljung–Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
+              L, lb$statistic, lb$p.value))
+}
+
+# 9) Kolmogorov–Smirnov test for normality (since Shapiro‐Wilk fails for large n)
+sf_resid2 <- na.omit(sf_resid)
+ks <- ks.test(sf_resid2, "pnorm",
+              mean = mean(sf_resid2),
+              sd   = sd(sf_resid2))
+cat(sprintf("KS test: statistic=%.3f, p‐value=%.3f\n", ks$statistic, ks$p.value))
+
+# 10) Residuals vs Fitted plot
+sf_fitted <- sf_hat_train
+valid_idx_train <- which(!is.na(sf_resid))
+plot(sf_fitted[valid_idx_train], sf_resid[valid_idx_train],
+     xlab = "Fitted Value (°C)", ylab = "Residual (°C)",
+     main = "SF Residuals vs Fitted", col = "darkgray", pch = 16)
+abline(h = 0, col = "red", lwd = 2)
+
+# 11) Repeat ACF/PACF and Ljung–Box for each station
+for (j in seq_along(station_names)) {
+  stn <- station_names[j]
+  resid_j <- resid_matrix[, j]
+  cat("\n--- Diagnostics for station:", stn, "---\n")
+  acf(resid_j, na.action = na.pass, main = paste("ACF of", stn, "Residuals"))
+  pacf(resid_j, na.action = na.pass, main = paste("PACF of", stn, "Residuals"))
+  lbj <- Box.test(resid_j, lag = 14, type = "Ljung-Box", fitdf = 0)
+  cat(sprintf("Ljung–Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
+              stn, lbj$statistic, lbj$p.value))
+}
+
+# 12) Summary statistics for each station’s residuals
+for (j in seq_along(station_names)) {
+  stn <- station_names[j]
+  resid_j <- resid_matrix[, j]
+  cat(sprintf("\nStation %s: mean=%.4f, sd=%.4f, missing%%=%.2f\n",
+              stn,
+              mean(resid_j, na.rm = TRUE),
+              sd(resid_j, na.rm = TRUE),
+              100 * sum(is.na(resid_j)) / length(resid_j)))
+}
+
+# 13) Residual heatmap (optional)
+library(reshape2)
+resid_df <- data.frame(date = dates_train, resid_matrix)
+resid_melt <- melt(resid_df, id.vars = "date", variable.name = "Station", value.name = "Residual")
+ggplot(resid_melt, aes(x = date, y = Station, fill = Residual)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(title = "Residuals Heatmap (Train)", x = "Date", y = "Station") +
+  theme_minimal()
+
+```
+
+Tmin Spatial actor DLM
+
+```{r}
+# Install and load required packages
+install.packages(c("dlm", "tidyverse", "lubridate", "geosphere"))
+
+library(dlm)         # for Dynamic Linear Models
+library(tidyverse)   # for data manipulation (dplyr, tidyr, ggplot2, etc.)
+library(lubridate)   # for working with Dates
+library(geosphere)   # for distance computations
+
+# 1) Read the GHCN CSV
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE)
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+# 2) Convert types, compute Celsius/mm, drop "_tenth" fields
+ghcn <- ghcn %>%
+  mutate(
+    date = as_date(date),          # YYYY-MM-DD → Date
+    tmin = tmin_tenthC / 10,       # tenths °C → °C
+    tmax = tmax_tenthC / 10,       # tenths °C → °C
+    prcp = prcp_tenthmm / 10       # tenths mm → mm
+  ) %>%
+  select(
+    station_id, station_name, latitude, longitude, elevation_m,
+    date, tmin, tmax, prcp
+  )
+
+# 3) Restrict to dates ≥ 1976-11-01
+ghcn <- filter(ghcn, date >= as.Date("1976-11-01"))
+
+# 4) Subset to four stations
+target_stations <- c(
+  "SAN FRANCISCO DWTN",
+  "PASO ROBLES MUNI AP",
+  "BAKER CITY AP",
+  "PRESCOTT LOVE FLD"
+)
+ghcn_sub <- filter(ghcn, station_name %in% target_stations)
+
+# 5) Pivot to wide format for Tmin
+tmin_wide <- ghcn_sub %>%
+  select(date, station_name, tmin) %>%
+  pivot_wider(names_from = station_name, values_from = tmin) %>%
+  arrange(date)
+
+# 6) Extract matrix of Tmin values
+Y_min <- as.matrix(tmin_wide[,-1])
+rownames(Y_min) <- tmin_wide$date
+
+# 7) Dates vector
+all_dates <- as.Date(tmin_wide$date)
+
+# 8) Define train/test split:
+#    train = all dates < 2024-12-01; test = dates in December 2024
+train_idx <- which(all_dates < as.Date("2024-12-01"))
+test_idx  <- which(all_dates >= as.Date("2024-12-01") & all_dates < as.Date("2025-01-01"))
+
+# 9) Reorder columns so SF is first
+station_names <- colnames(Y_min)
+sf_idx <- which(station_names == "SAN FRANCISCO DWTN")
+new_order <- c(sf_idx, setdiff(seq_along(station_names), sf_idx))
+Y_min <- Y_min[ , new_order]
+station_names <- station_names[new_order]
+
+# 10) Station coordinates in same order
+station_coords <- ghcn_sub %>%
+  select(station_name, latitude, longitude) %>%
+  distinct() %>%
+  slice(match(station_names, station_name))
+
+# 11) Compute distances (km) from SF
+sf_coord <- station_coords %>%
+  filter(station_name == "SAN FRANCISCO DWTN") %>%
+  select(longitude, latitude) %>%
+  as.numeric()
+coords_mat <- station_coords %>% select(longitude, latitude) %>% as.matrix()
+dist_m <- distHaversine(coords_mat, sf_coord)
+dist_km <- dist_m / 1000
+
+# 12) Spatially varying loadings λ_j = exp(–d_j / ρ)
+rho <- 500
+lambda <- exp(- dist_km / rho)  # length = 4
+
+# 13) Build base DLM for latent factor (trend + seasonal)
+base_trend <- dlmModPoly(order = 2, dV = 0, dW = c(1e-7, 1e-7))
+base_season <- dlmModTrig(s = 365, q = 2, dV = 0, dW = 1e-5)
+base_model <- base_trend + base_season
+m_base <- ncol(base_model$FF)   # should be 6
+
+# 14) Observation matrix F_spatial (4 × 6): each row = λ_j * base_model$FF
+n_stations <- length(lambda)    # 4
+F_spatial <- matrix(0, nrow = n_stations, ncol = m_base)
+for (j in 1:n_stations) {
+  F_spatial[j, ] <- lambda[j] * base_model$FF
+}
+
+# 15) Transition matrix G_spatial (6 × 6)
+G_spatial <- base_model$GG
+
+# 16) Templates for W & V (we will replace W[1,1] and diag(V))
+W_template <- base_model$W
+V_template <- diag(1, n_stations)
+
+# 17) Prior for factor state
+m0_spatial <- rep(0, m_base)
+C0_spatial <- diag(1e6, m_base)
+
+# 18) Builder function for MLE on training data
+buildSpatialModel <- function(param) {
+  W_level   <- exp(param[1])
+  V_obs_raw <- exp(param[2])
+  V_obs     <- min(V_obs_raw, 0.5)
+
+  Wt <- W_template
+  Wt[1,1] <- W_level
+  Vt <- diag(V_obs, n_stations)
+
+  dlm(
+    m0 = m0_spatial,
+    C0 = C0_spatial,
+    FF = F_spatial,
+    V  = Vt,
+    GG = G_spatial,
+    W  = Wt
+  )
+}
+
+# 19) Split Y_min into training and testing sets
+Y_train <- Y_min[train_idx, ]
+Y_test  <- Y_min[test_idx, ]
+
+# 20) MLE on Y_train
+init_param <- log(c(W_level = 0.1, V_obs = 1))
+mle_fit_spatial <- dlmMLE(Y_train, parm = init_param, build = buildSpatialModel)
+stopifnot(mle_fit_spatial$convergence == 0)
+
+opt_param_spatial <- exp(mle_fit_spatial$par)
+names(opt_param_spatial) <- c("W_level", "V_obs")
+print(opt_param_spatial)
+
+# 21) Rebuild fitted model on training data
+mod_spatial_fitted <- buildSpatialModel(mle_fit_spatial$par)
+
+# 22) Kalman filtering on training data
+filter_res_train <- dlmFilter(Y_train, mod_spatial_fitted)
+
+# 23) One‐step ahead forecasts on train
+y_hat_train <- filter_res_train$f                # [n_train × 4]
+sf_hat_train  <- y_hat_train[, 1]                 # SF predictions
+sf_true_train <- Y_train[, 1]                     # SF actuals
+
+# 24) Within‐sample accuracy (RMSE, MAE) for SF
+resid_train <- sf_true_train - sf_hat_train
+valid_idx_train <- which(!is.na(resid_train))
+rmse_train <- sqrt(mean((sf_true_train[valid_idx_train] - sf_hat_train[valid_idx_train])^2))
+mae_train  <- mean(abs(sf_true_train[valid_idx_train] - sf_hat_train[valid_idx_train]))
+cat("Within‐sample (train) SF RMSE =", round(rmse_train, 3), "\n")
+cat("Within‐sample (train) SF MAE  =", round(mae_train, 3), "\n")
+
+# 25) Forecast on test (December 2024)
+n_test <- nrow(Y_test)
+forecast_res_test <- dlmForecast(filter_res_train, nAhead = n_test)
+
+# 26) Extract SF forecast for test
+if (is.list(forecast_res_test$f)) {
+  Y_fore_test_mat <- do.call(rbind, forecast_res_test$f)
+} else {
+  Y_fore_test_mat <- forecast_res_test$f
+}
+sf_fore_test <- Y_fore_test_mat[, 1]
+sf_true_test <- Y_test[, 1]
+
+# 27) Out‐of‐sample accuracy (RMSE, MAE) for SF
+valid_idx_test <- which(!is.na(sf_true_test) & !is.na(sf_fore_test))
+sf_true_test2 <- sf_true_test[valid_idx_test]
+sf_fore_test2 <- sf_fore_test[valid_idx_test]
+
+rmse_test <- sqrt(mean((sf_true_test2 - sf_fore_test2)^2))
+mae_test  <- mean(abs(sf_true_test2 - sf_fore_test2))
+cat("Out‐of‐sample (Dec 2024) SF RMSE =", round(rmse_test, 3), "\n")
+cat("Out‐of‐sample (Dec 2024) SF MAE  =", round(mae_test, 3), "\n")
+
+# 28) 90% PI for SF forecasts on test
+sf_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
+z90 <- qnorm(0.95)
+sf_lower_test <- sf_fore_test - z90 * sf_sd_test
+sf_upper_test <- sf_fore_test + z90 * sf_sd_test
+
+# 29) Plot last 60 days of training (before Dec 2024), actual Dec 2024, and Dec 2024 forecasts for SF
+
+# Determine indices for last 60 training days:
+last_train_date <- as.Date("2024-11-30")
+last_train_idx <- which(all_dates == last_train_date)
+start_plot <- max(1, last_train_idx - 59)
+
+# Data frame for last 60 days of training (observed)
+train_last60_df <- tibble(
+  date = all_dates[start_plot:last_train_idx],
+  temp = sf_true_train[start_plot:length(train_idx)],
+  type = "Observed (Train)"
+)
+
+# Data frame for actual December 2024
+dec2024_dates <- all_dates[test_idx]
+actual_dec_df <- tibble(
+  date = dec2024_dates,
+  temp = sf_true_test,
+  type = "Observed (Dec 2024)"
+)
+
+# Data frame for December 2024 forecasts
+forecast_dec_df <- tibble(
+  date = dec2024_dates,
+  temp = sf_fore_test,
+  type = "Forecast (Dec 2024)"
+)
+
+# Combine all three
+plot_df <- bind_rows(train_last60_df, actual_dec_df, forecast_dec_df)
+
+# 30) Plot everything with 90% prediction interval for Dec 2024
+ribbon_dec_df <- tibble(
+  date  = dec2024_dates,
+  lower = sf_lower_test,
+  upper = sf_upper_test
+)
+
+library(ggplot2)
+ggplot() +
+  geom_ribbon(data = ribbon_dec_df,
+              aes(x = date, ymin = lower, ymax = upper),
+              fill = "steelblue", alpha = 0.2) +
+  geom_line(data = plot_df,
+            aes(x = date, y = temp, color = type, linetype = type),
+            size = 0.8) +
+  scale_color_manual(
+    values = c(
+      "Observed (Train)"     = "orange",
+      "Observed (Dec 2024)"  = "black",
+      "Forecast (Dec 2024)"  = "steelblue"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Observed (Train)"     = "solid",
+      "Observed (Dec 2024)"  = "solid",
+      "Forecast (Dec 2024)"  = "dashed"
+    )
+  ) +
+  labs(
+    title    = "SF Tmin: Spatial‐Factor DLM — Training vs. December 2024",
+    subtitle = sprintf("Train RMSE=%.2f, MAE=%.2f | Test RMSE=%.2f, MAE=%.2f",
+                       rmse_train, mae_train, rmse_test, mae_test),
+    x        = "Date",
+    y        = "Min Temperature (°C)",
+    color    = "",
+    linetype = ""
+  ) +
+  coord_cartesian(
+    xlim = c(all_dates[start_plot], dec2024_dates[length(dec2024_dates)]),
+    ylim = range(
+      c(train_last60_df$temp, actual_dec_df$temp, ribbon_dec_df$lower, ribbon_dec_df$upper),
+      na.rm = TRUE
+    )
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#checkresiduals
+# (Assumes Y_train, filter_res_train, sf_hat_train, and all_dates/train_idx are already defined)
+
+# 1) Extract in‐sample residuals for each station
+resid_matrix <- Y_train - filter_res_train$f   # [n_train × 4]
+colnames(resid_matrix) <- station_names
+
+# 2) Convert residuals to ts objects (optional)
+dates_train <- all_dates[train_idx]
+resid_ts <- lapply(1:ncol(resid_matrix), function(j) {
+  ts(resid_matrix[, j],
+     start = c(year(dates_train[1]), yday(dates_train[1])),
+     frequency = 365)
+})
+names(resid_ts) <- station_names
+
+# 3) Choose SF residuals for diagnostics
+sf_resid <- resid_matrix[, "SAN FRANCISCO DWTN"]
+
+# 4) Time‐series plot of SF residuals
+plot(dates_train, sf_resid, type = "l", col = "darkgray",
+     main = "SF In‐Sample Residuals over Time",
+     xlab = "Date", ylab = "Residual (°C)")
+
+# 5) Histogram + density overlay
+hist(sf_resid, breaks = 30, freq = FALSE,
+     main = "Histogram of SF Residuals (Train)",
+     xlab = "Residual (°C)", col = "lightblue")
+lines(density(sf_resid, na.rm = TRUE), col = "darkblue", lwd = 2)
+
+# 6) QQ‐plot vs Normal
+qqnorm(sf_resid, main = "QQ‐Plot of SF Residuals (Train)")
+qqline(sf_resid, col = "red", lwd = 2)
+
+# 7) ACF and PACF of SF residuals
+par(mar = c(4, 4, 2, 1))
+acf(sf_resid, na.action = na.pass, main = "ACF of SF Residuals")
+pacf(sf_resid, na.action = na.pass, main = "PACF of SF Residuals")
+par(mfrow = c(1,1))
+
+# 8) Ljung–Box test for autocorrelation at various lags
+for (L in c(7, 14, 21, 28)) {
+  lb <- Box.test(sf_resid, lag = L, type = "Ljung-Box", fitdf = 0)
+  cat(sprintf("Ljung–Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
+              L, lb$statistic, lb$p.value))
+}
+
+# 9) Kolmogorov–Smirnov test for normality (since Shapiro‐Wilk fails for large n)
+sf_resid2 <- na.omit(sf_resid)
+ks <- ks.test(sf_resid2, "pnorm",
+              mean = mean(sf_resid2),
+              sd   = sd(sf_resid2))
+cat(sprintf("KS test: statistic=%.3f, p‐value=%.3f\n", ks$statistic, ks$p.value))
+
+# 10) Residuals vs Fitted plot
+sf_fitted <- sf_hat_train
+valid_idx_train <- which(!is.na(sf_resid))
+plot(sf_fitted[valid_idx_train], sf_resid[valid_idx_train],
+     xlab = "Fitted Value (°C)", ylab = "Residual (°C)",
+     main = "SF Residuals vs Fitted", col = "darkgray", pch = 16)
+abline(h = 0, col = "red", lwd = 2)
+
+# 11) Repeat ACF/PACF and Ljung–Box for each station
+for (j in seq_along(station_names)) {
+  stn <- station_names[j]
+  resid_j <- resid_matrix[, j]
+  cat("\n--- Diagnostics for station:", stn, "---\n")
+  acf(resid_j, na.action = na.pass, main = paste("ACF of", stn, "Residuals"))
+  pacf(resid_j, na.action = na.pass, main = paste("PACF of", stn, "Residuals"))
+  lbj <- Box.test(resid_j, lag = 14, type = "Ljung-Box", fitdf = 0)
+  cat(sprintf("Ljung–Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
+              stn, lbj$statistic, lbj$p.value))
+}
+
+# 12) Summary statistics for each station’s residuals
+for (j in seq_along(station_names)) {
+  stn <- station_names[j]
+  resid_j <- resid_matrix[, j]
+  cat(sprintf("\nStation %s: mean=%.4f, sd=%.4f, missing%%=%.2f\n",
+              stn,
+              mean(resid_j, na.rm = TRUE),
+              sd(resid_j, na.rm = TRUE),
+              100 * sum(is.na(resid_j)) / length(resid_j)))
+}
+
+# 13) Residual heatmap (optional)
+library(reshape2)
+resid_df <- data.frame(date = dates_train, resid_matrix)
+resid_melt <- melt(resid_df, id.vars = "date", variable.name = "Station", value.name = "Residual")
+ggplot(resid_melt, aes(x = date, y = Station, fill = Residual)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(title = "Residuals Heatmap (Train)", x = "Date", y = "Station") +
+  theme_minimal()
+
+```
