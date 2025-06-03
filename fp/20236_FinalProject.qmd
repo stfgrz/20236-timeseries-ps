@@ -25,6 +25,7 @@ library(gridExtra)
 library(magrittr)
 library(textab)
 library(reshape2)
+library(quantmod)
 
 library(modeltime)
 library(timetk)
@@ -94,6 +95,8 @@ The data is provided in a .`txt` file named `ghcn.txt`. Each row in the dataset 
 
 Extract the data from the GISTEMP and GHCN datasets. Specifically, for daily data we will focus solely maximum and minimum temperature measurements from the `San Francisco Downtown` station. Describe suitably the two time series, with appropriate plots and comments. Perform a time series decomposition using appropriate tools and highlight relevant features (if present) for each component.
 
+## 1.1 Gistemp analysis
+
 ```{r}
 #| label: Load GISTEMP
 
@@ -113,6 +116,120 @@ stl_decomp <- stl(ts_gistemp, s.window = "periodic", robust = TRUE)
 seasonal_comp <- stl_decomp$time.series[, "seasonal"]
 ts_gistemp_ds <- ts_gistemp - seasonal_comp
 ```
+
+### 1.1.(a) Seasonality
+
+```{r}
+start_years <- seq(min(gistemp$Year), max(gistemp$Year) - 29, by = 10)
+seasonal_indices <- data.frame()
+
+for (start in start_years) {
+  # Subset the data for the 30-year period
+  subset_data <- subset(gistemp, Year >= start & Year < start + 30)
+  
+  # Reshape to long format for the subset
+  subset_long <- subset_data %>%
+    select(Year, Jan:Dec) %>%
+    pivot_longer(cols = Jan:Dec, names_to = "Month", values_to = "Anomaly") %>%
+    mutate(Month = match(Month, month.abb))
+  
+  # Create a ts object for the subset
+  ts_subset <- ts(subset_long$Anomaly, start = c(start, 1), frequency = 12)
+  
+  # Decompose using STL
+  decomp_subset <- stl(ts_subset, s.window = "periodic")
+  
+  # Extract the seasonal component and average by month
+  seasonal_comp <- decomp_subset$time.series[, "seasonal"]
+  temp_df <- data.frame(
+    Date = as.Date(as.yearmon(time(ts_subset))),
+    Month = cycle(ts_subset),
+    Seasonal = seasonal_comp
+  )
+  seasonal_mean <- aggregate(Seasonal ~ Month, data = temp_df, FUN = mean)
+  seasonal_mean$Period <- paste(start, start + 29, sep = "-")
+  
+  seasonal_indices <- rbind(seasonal_indices, seasonal_mean)
+}
+
+seasonal_indices$Month <- factor(seasonal_indices$Month,
+                                         levels = 1:12,
+                                         labels = month.name)
+```
+
+```{r}
+graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(size = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "H") +
+  ggtitle("Evolution of Seasonal Component") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
+
+print(graph_4)
+ggsave("graph_4.pdf", plot = graph_4, device = "pdf", width = 8, height = 6, units = "in")
+```
+
+From 1880-1909 to 1940-1969
+
+```{r}
+seasonal_indices_before <- seasonal_indices[1:84, ]
+
+graph_5 <- ggplot(seasonal_indices_before, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(linewidth = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "C") +
+  ggtitle("Evolution of Seasonal Component") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black"),
+  )
+
+print(graph_5)
+ggsave("graph_5.pdf", plot = graph_5, device = "pdf", width = 8, height = 6, units = "in")
+```
+
+From 1950-1979 to 1990-2019
+
+```{r}
+seasonal_indices_after <- seasonal_indices[85:144, ]
+
+graph_6 <- ggplot(seasonal_indices_after, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
+  geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
+  geom_line(linewidth = 0.5) +
+  geom_point(size = 0.75) +
+  scale_color_viridis_d(option = "D") +
+  ggtitle("Evolution of Seasonal Component") +
+  ylab("Average Seasonal Component") +
+  xlab("Month") +
+  guides(x = guide_axis(angle = 45)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
+
+print(graph_6)
+ggsave("graph_6.pdf", plot = graph_6, device = "pdf", width = 8, height = 6, units = "in")
+```
+
+
+## 1.2 GHCN analysis
 
 ```{r}
 #| label: Load GHCN
@@ -151,6 +268,129 @@ sf <- ghcn %>%
   filter(station_id == "USW00023272") %>%
   arrange(date)
 ```
+
+### 1.2.(a)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+library(ggplot2)
+library(scales)   # for date formatting
+
+ggplot(sf, aes(x = date)) +
+  # 1. ribbon between Tmin and Tmax
+  geom_ribbon(
+    aes(ymin = tmin, ymax = tmax),
+    fill  = "orange",    # light‐blue fill
+    alpha = 0.4
+  ) +
+  # 2. lines for Tmin and Tmax
+  geom_line(
+    aes(y = tmin, color = "Tmin"),
+    size = 0.7, 
+    na.rm = TRUE
+  ) +
+  geom_line(
+    aes(y = tmax, color = "Tmax"),
+    size = 0.7, 
+    na.rm = TRUE
+  ) +
+  # 3. manually specify the two line colors
+  scale_color_manual(
+    values = c(
+      Tmin = "steelblue",    # darker blue
+      Tmax = "#D85711"     # darker red
+    )
+  ) +
+  # 4. format the x–axis to show every 3 months, angled labels
+  scale_x_date(
+    date_breaks   = "3 months",
+    date_labels   = "%b %Y",
+    expand        = c(0, 0)
+  ) +
+  # 5. axis labels, title, and legend title
+  labs(
+    x     = "Date",
+    y     = "Temperature (°C)",
+    color = "",   # blank so legend heading does not appear
+    title = "Daily Minimum and Maximum Temperatures\nSan Francisco, CA"
+  ) +
+  # 6. a minimal theme with some custom tweaks
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x      = element_text(angle = 45, hjust = 1),
+    legend.position  = "bottom",
+    plot.title       = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_blank()
+  )
+
+```
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# 1. Filter SF data to the last 12 months
+sf_last <- sf %>%
+  filter(date >= (Sys.Date() - 520))
+
+# 2. Plot Tmin–Tmax ribbon + lines, restricted to sf_last
+descriptive_ghcn <- ggplot(sf_last, aes(x = date)) +
+  # ribbon between tmin and tmax
+  geom_ribbon(
+    aes(ymin = tmin, ymax = tmax),
+    fill  = "cornsilk",
+    alpha = 0.4
+  ) +
+  # Tmin line
+  geom_line(
+    aes(y = tmin, color = "Tmin"),
+    size = 0.7,
+    na.rm = TRUE
+  ) +
+  # Tmax line
+  geom_line(
+    aes(y = tmax, color = "Tmax"),
+    size = 0.7,
+    na.rm = TRUE
+  ) +
+  # define manual colors for Tmin/Tmax
+  scale_color_manual(
+    values = c(
+      Tmin = "steelblue",
+      Tmax = "#D85711"
+    )
+  ) +
+  # x–axis: breaks every 3 months over the last year
+  scale_x_date(
+  date_breaks = "1 month",
+  date_labels = "%b %Y",
+  expand      = c(0, 0)
+  ) +
+  labs(
+    x     = "Date",
+    y     = "Temperature (°C)",
+    color = "",
+    title = "Daily maximum and minimum temperatures in downtown San Francisco",
+    subtitle = "January 2024 - December 2024"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
+
+print(descriptive_ghcn)
+ggsave("descriptive_ghcn.pdf", plot = descriptive_ghcn, device = "pdf", width = 10, height = 6, units = "in")
+```
+
+
 
 ```{r}
 #| label: If we manage to obtain the extra data
@@ -347,6 +587,52 @@ plot(ts_gistemp_ds,
      xlab = "Time",
      col = "gray")
 lines(time_vals, estMeans, col = "blue", lwd = 2)
+```
+
+```{r}
+#| fig-width: 12
+#| fig-height: 6
+
+
+df_states <- tibble(
+  time       = as.numeric(time(ts_gistemp_ds)),       # e.g. 1880.000, 1880.083, …
+  temp       = as.numeric(ts_gistemp_ds),             # your deseasonalized anomalies
+  state      = estStates$state                         # 1 or 2
+)
+
+# 2. Extract the two state‐specific means from the fitted model
+#    (for a 2‐state HMM they live in fmodel@response[[1]] and [[2]])
+state_means <- tibble(
+  state = 1:2,
+  mean  = sapply(1:2, function(k) {
+    as.numeric(fmodel@response[[k]][[1]]@parameters$coefficients)
+  })
+)
+
+# 3. Join to assign each timestamp its estimated‐mean based on the Viterbi state
+df_plot <- df_states %>%
+  left_join(state_means, by = "state") %>%
+  rename(est_mean = mean)
+
+# 4. Now plot in ggplot2:
+HMM_2s <- ggplot(df_plot, aes(x = time)) +
+  # 4a. Raw deseasonalized data in light gray
+  geom_line(aes(y = temp), color = "orange") +
+  # 4b. Overlay the HMM‐estimated mean (change color/size as you like)
+  geom_line(aes(y = est_mean), color = "steelblue", size = 0.8) +
+  labs(
+    title = "Deseasonalized Data with 2-State HMM Estimated Means",
+    x     = "Time",
+    y     = "Temperature Anomaly"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
+
+print(HMM_2s)
 ```
 
 ```{r}
