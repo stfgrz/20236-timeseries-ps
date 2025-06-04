@@ -303,7 +303,7 @@ ggplot(sf, aes(x = date)) +
       Tmax = "#D85711"     # darker red
     )
   ) +
-  # 4. format the x–axis to show every 3 months, angled labels
+  # 4. format the x-axis to show every 3 months, angled labels
   scale_x_date(
     date_breaks   = "3 months",
     date_labels   = "%b %Y",
@@ -339,7 +339,7 @@ library(scales)
 sf_last <- sf %>%
   filter(date >= (Sys.Date() - 520))
 
-# 2. Plot Tmin–Tmax ribbon + lines, restricted to sf_last
+# 2. Plot Tmin-Tmax ribbon + lines, restricted to sf_last
 descriptive_ghcn <- ggplot(sf_last, aes(x = date)) +
   # ribbon between tmin and tmax
   geom_ribbon(
@@ -366,7 +366,7 @@ descriptive_ghcn <- ggplot(sf_last, aes(x = date)) +
       Tmax = "#D85711"
     )
   ) +
-  # x–axis: breaks every 3 months over the last year
+  # x-axis: breaks every 3 months over the last year
   scale_x_date(
   date_breaks = "1 month",
   date_labels = "%b %Y",
@@ -404,7 +404,7 @@ library(scales)
 sf_last3 <- sf %>%
   filter(date >= (Sys.Date() - 4095))
 
-# 2. Plot Tmin–Tmax ribbon + smoothed lines, restricted to sf_last3
+# 2. Plot Tmin-Tmax ribbon + smoothed lines, restricted to sf_last3
 plot_sf_last3 <- ggplot(sf_last3, aes(x = date)) +
   # a) ribbon between raw Tmin and Tmax
   geom_ribbon(
@@ -437,7 +437,7 @@ plot_sf_last3 <- ggplot(sf_last3, aes(x = date)) +
       Tmax = "#D85711"
     )
   ) +
-  # e) x–axis breaks every 6 months (three‐year span)
+  # e) x-axis breaks every 6 months (three‐year span)
   scale_x_date(
     date_breaks = "6 months",
     date_labels = "%b %Y",
@@ -451,7 +451,7 @@ plot_sf_last3 <- ggplot(sf_last3, aes(x = date)) +
     title    = "Daily minimum and maximum temperatures in downtown San Francisco",
     subtitle = paste0(
       format(min(sf_last3$date), "%B %Y"),
-      " – ",
+      " - ",
       format(max(sf_last3$date), "%B %Y")
     )
   ) +
@@ -978,7 +978,7 @@ ggplot(df_smth, aes(x = Time)) +
 ```{r}
 #| label: Residual diagnostics
 
-# (a) raw and standardized one-step–ahead errors
+# (a) raw and standardized one-step-ahead errors
 raw_resid <- residuals(filtLL2S, type = "raw")
 std_resid <- residuals(filtLL2S, type = "standardized", sd = FALSE)
 
@@ -997,7 +997,7 @@ curve(dnorm(x), add = TRUE)
 # (e) QQ-plot
 qqnorm(std_resid); qqline(std_resid)
 
-# (f) Ljung–Box test for whiteness
+# (f) Ljung-Box test for whiteness
 Box.test(std_resid, type = "Ljung-Box", lag = 20)
 ```
 
@@ -1028,7 +1028,7 @@ print(param_tab)
 ```{r}
 #| label: Model fit: log-likelihood, AIC, BIC
 
-# log-likelihood at the MLE (dlmMLE returns val = –logLik)
+# log-likelihood at the MLE (dlmMLE returns val = -logLik)
 logLik <- -fit_hess$value
 p      <- length(log_par)
 n      <- length(ts_gistemp)
@@ -1219,7 +1219,7 @@ ggplot(df_rwpn, aes(x = Year)) +
 # Subset the data.frame for years 1972 ≤ Year ≤ 1977
 df_rwpn_sub <- subset(df_rwpn, Year >= 1972 & Year <= 1977)
 
-# 3. Plot the 1972–1977 subset
+# 3. Plot the 1972-1977 subset
 ggplot_df_rwpn_sub <- ggplot(df_rwpn_sub, aes(x = Year)) +
   
   # (a) Original data 
@@ -1239,7 +1239,7 @@ ggplot_df_rwpn_sub <- ggplot(df_rwpn_sub, aes(x = Year)) +
   
   # 4. Labels
   labs(
-    title    = "Random-Walk Smoothing on GISTEMP (1972–1977)",
+    title    = "Random-Walk Smoothing on GISTEMP (1972-1977)",
     subtitle = "Monthly Temperature Anomalies with Smoothed State ±95% CI (FFBS)",
     x        = "Year",
     y        = "Temperature Anomaly (°C)"
@@ -1359,12 +1359,12 @@ p_hist <- ggplot(df_resid, aes(x = StdResid)) +
   )
 
 
-#— 2. (d) Q–Q Plot of Std. Residuals —#
+#— 2. (d) Q-Q Plot of Std. Residuals —#
 p_qq <- ggplot(df_resid, aes(sample = StdResid)) +
   stat_qq(color    = "steelblue", size = 1.8) +
   stat_qq_line(color = "orange", size = 0.6) +
   labs(
-    title = "Normal Q–Q Plot of Standardized Residuals",
+    title = "Normal Q-Q Plot of Standardized Residuals",
     x     = "Theoretical Quantiles",
     y     = "Sample Quantiles"
   ) +
@@ -1794,7 +1794,7 @@ ggplot(df_plot, aes(x = Time)) +
 #| fig-width: 12
 #| fig-height: 12
 
-# (a) raw and standardized one-step–ahead errors
+# (a) raw and standardized one-step-ahead errors
 raw_resid <- residuals(filtInd, type = "raw")
 std_resid <- residuals(filtInd, type = "standardized", sd = FALSE)
 
@@ -1829,7 +1829,7 @@ par(mfrow = c(2,1))
 qqnorm(std_resid[,1], main = "QQ-plot: Std. Residuals (Tmin)"); qqline(std_resid[,1])
 qqnorm(std_resid[,2], main = "QQ-plot: Std. Residuals (Tmax)"); qqline(std_resid[,2])
 
-# (f) Ljung–Box test for whiteness
+# (f) Ljung-Box test for whiteness
 lb_tmin <- Box.test(std_resid[,1], type = "Ljung-Box", lag = 20)
 lb_tmax <- Box.test(std_resid[,2], type = "Ljung-Box", lag = 20)
 print(lb_tmin)
@@ -2158,7 +2158,7 @@ ggplot(df_melt, aes(x = time, y = Value,
 #add credible intervals 95%
 #--- load packages ----------------------------------------------------------
 
-#--- 1) Create df for observed & predicted, subset to 1990–1991 -------------
+#--- 1) Create df for observed & predicted, subset to 1990-1991 -------------
 df <- data.frame(
     time       = as.numeric(time(temp)),         # numeric time index for `temp`
     Tmin       = as.numeric(temp[,"Tmin"]),       # observed Tmin
@@ -2180,7 +2180,7 @@ df_melt <- melt(
         Source = ifelse(grepl("_pred$",  Series_Source), "Estimated", "Original")
     )
 
-#--- 2) Create df for lower/upper bounds, subset to 1990–1991 --------------
+#--- 2) Create df for lower/upper bounds, subset to 1990-1991 --------------
 #    We assume `lower` and `upper` are ts objects with the same time index as `temp`
 #    and with columns "Tmin" and "Tmax".  
 ci_df <- data.frame(
@@ -2227,7 +2227,7 @@ ggplot() +
     labs(
         x     = "Time (year)",
         y     = "Temperature",
-        title = "Original vs One-Step-Ahead DLM (1990–1991) with 95% Intervals"
+        title = "Original vs One-Step-Ahead DLM (1990-1991) with 95% Intervals"
     ) +
     theme_bw(base_size = 14) +
     theme(
@@ -2490,7 +2490,7 @@ df_all <- tibble(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5.  Restrict to 2020–2024 (inclusive)
+# 5.  Restrict to 2020-2024 (inclusive)
 df_all <- df_all %>%
   filter(date >= as.Date("2020-01-01") &
          date <= as.Date("2024-12-31"))
@@ -2565,7 +2565,7 @@ overlay_plot_ci <- ggplot(df_bound, aes(x = date)) +
     x     = "Date",
     y     = "Value (°C / latent)",
     color = "",
-    title = "2020–2024: De-seasonalized Tmin, Tmax and Smoothed ξ (with 95% CI)"
+    title = "2020-2024: De-seasonalized Tmin, Tmax and Smoothed ξ (with 95% CI)"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -2718,7 +2718,7 @@ ggsave("overlay_plot_cipdf.pdf", plot = overlay_plot_ci, device = "pdf", width =
 #| fig-width: 16
 #| fig-height: 16
 
-# (a) raw and standardized one-step–ahead errors
+# (a) raw and standardized one-step-ahead errors
 raw_resid_CF <- residuals(filtCF, type = "raw")
 std_resid_CF <- residuals(filtCF, type = "standardized", sd = FALSE)
 
@@ -2753,7 +2753,7 @@ par(mfrow = c(2,1))
 qqnorm(std_resid_CF[,1], main = "CF Model: QQ-plot: Std. Residuals (Tmin)"); qqline(std_resid_CF[,1])
 qqnorm(std_resid_CF[,2], main = "CF Model: QQ-plot: Std. Residuals (Tmax)"); qqline(std_resid_CF[,2])
 
-# (f) Ljung–Box test for whiteness
+# (f) Ljung-Box test for whiteness
 lb_tmin_CF <- Box.test(std_resid_CF[,1], type = "Ljung-Box", lag = 20)
 lb_tmax_CF <- Box.test(std_resid_CF[,2], type = "Ljung-Box", lag = 20)
 print(lb_tmin_CF)
@@ -2912,13 +2912,13 @@ p_hist_CF <- ggplot(df_hist_CF, aes(x = StdResid)) +
     panel.grid.minor = element_blank()
   )
 
-#► 3. (d) Q–Q Plots of standardized residuals for each variable
+#► 3. (d) Q-Q Plots of standardized residuals for each variable
 p_qq_CF <- ggplot(df_resid_CF, aes(sample = StdResid)) +
   stat_qq(color    = "steelblue", size = 1.8) +
   stat_qq_line(color = "orange",  size = 0.6) +
   facet_wrap(~ Variable, ncol = 1) +
   labs(
-    title = "CF Model: Normal Q–Q Plot of Standardized Residuals",
+    title = "CF Model: Normal Q-Q Plot of Standardized Residuals",
     x     = "Theoretical Quantiles",
     y     = "Sample Quantiles"
   ) +
@@ -2932,15 +2932,15 @@ p_qq_CF <- ggplot(df_resid_CF, aes(sample = StdResid)) +
     panel.grid.minor = element_blank()
   )
 
-#► 4. Ljung–Box tests for whiteness (lag = 20) on each variable
+#► 4. Ljung-Box tests for whiteness (lag = 20) on each variable
 lb_tmin_CF <- Box.test(std_resid_CF[, 1], type = "Ljung-Box", lag = 20)
 lb_tmax_CF <- Box.test(std_resid_CF[, 2], type = "Ljung-Box", lag = 20)
 
-#► 5. Jarque–Bera tests for Normality (optional, if you also want to check)
+#► 5. Jarque-Bera tests for Normality (optional, if you also want to check)
 jb_tmin_CF <- jarque.bera.test(std_resid_CF[, 1])
 jb_tmax_CF <- jarque.bera.test(std_resid_CF[, 2])
 
-#► 6. Print Ljung–Box and Jarque–Bera results to console
+#► 6. Print Ljung-Box and Jarque-Bera results to console
 print(lb_tmin_CF)
 print(lb_tmax_CF)
 
@@ -3236,6 +3236,7 @@ graph3am <- ggplot() +
   )
 
 print(graph3am)
+ggsave("graph3am.pdf", plot = graph3am, device = "pdf", width = 12, height = 6, units = "in")
 ```
 
 ```{r}
@@ -4271,6 +4272,10 @@ ggplot(plot_test_df, aes(x = date)) +
 
 ```
 
+# 3.4 Spatial model
+
+## 3.4.1
+
 ```{r}
 # Install and load required packages
 install.packages(c("dlm", "tidyverse", "lubridate", "geosphere"))
@@ -4360,7 +4365,7 @@ coords_mat <- station_coords %>% select(longitude, latitude) %>% as.matrix()
 dist_m <- distHaversine(coords_mat, sf_coord)
 dist_km <- dist_m / 1000
 
-# 12) Spatially varying loadings λ_j = exp(–d_j / ρ)
+# 12) Spatially varying loadings λ_j = exp(-d_j / ρ)
 rho <- 500
 lambda <- exp(- dist_km / rho)  # length = 4
 
@@ -4468,18 +4473,278 @@ sf_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
 z90 <- qnorm(0.95)
 sf_lower_test <- sf_fore_test - z90 * sf_sd_test
 sf_upper_test <- sf_fore_test + z90 * sf_sd_test
+```
+### 3.4.2
+
+```{r}
+sf_sd_test   <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
+z90          <- qnorm(0.95)
+sf_lower_test <- sf_fore_test - z90 * sf_sd_test
+sf_upper_test <- sf_fore_test + z90 * sf_sd_test
+```
+
+```{r}
+# (A) extract the one‐step‐ahead standard deviations for SF
+sf_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
+
+# (B) 95% critical value
+z95 <- qnorm(0.975)   # ≈ 1.96
+
+# (C) compute the 95% lower/upper bounds
+sf_lower95_test <- sf_fore_test - z95 * sf_sd_test
+sf_upper95_test <- sf_fore_test + z95 * sf_sd_test
+
+```
+
+```{r}
+# (D) half‐width vector (length = number of hold‐out days, here 31)
+half_width95 <- (sf_upper95_test - sf_lower95_test) / 2
+
+# (E) get summary statistics (min, 1st Qu, median, mean, 3rd Qu, max)
+summary(half_width95)   # ← RUN THIS to see the spread of your 95% band‐half‐widths
+
+```
+
+```{r}
+library(tibble)
+
+# (F) pick out hold‐out dates from all_dates
+hold_dates <- all_dates[test_idx]     # should be 2024-12-01, 2024-12-02, ..., 2024-12-31
+
+# (G) assemble df_hold
+df_hold <- tibble(
+  date        = hold_dates,
+  actual_tmax = as.numeric(sf_true_test),    # actual SF Tmax in Dec 2024
+  fit_tmax    = as.numeric(sf_fore_test),    # forecasted SF Tmax
+  lower_tmax  = as.numeric(sf_lower95_test),
+  upper_tmax  = as.numeric(sf_upper95_test)
+)
+
+```
+
+```{r}
+# (I) Interval‐ribbon data.frame
+df_interval_hold <- df_hold %>%
+  select(date, lower_tmax, upper_tmax) %>%
+  rename(lower = lower_tmax, upper = upper_tmax) %>%
+  mutate(series = "tmax")
+
+# check
+print(df_interval_hold)   # ← RUN THIS; it has columns (date, lower, upper, series)
+
+# (J) Actual‐vs‐forecast “long” data.frame
+df_af_hold <- df_hold %>%
+  select(date, actual_tmax, fit_tmax) %>%
+  rename(actual = actual_tmax, fit = fit_tmax) %>%
+  mutate(series = "tmax") %>%
+  pivot_longer(
+    cols      = c("actual", "fit"),
+    names_to  = "type",
+    values_to = "value"
+  )
+
+# check
+print(df_af_hold)   # ← RUN THIS; it has (date, series="tmax", type ∈ {actual,fit}, value)
+
+```
+
+```{r}
+#| fig-width: 12
+#| fig-height: 6  
+
+
+library(ggplot2)
+
+ggplot() +
+  # (a) 95% CI ribbon, fill by series ("tmax")
+  geom_ribbon(
+    data = df_interval_hold,
+    aes(x = date, ymin = lower, ymax = upper, fill = series),
+    alpha = 0.3
+  ) +
+  # (b) Actual trajectory (solid line)
+  geom_line(
+    data = filter(df_af_hold, type == "actual"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (c) Forecast trajectory (dashed line)
+  geom_line(
+    data = filter(df_af_hold, type == "fit"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (d) Colour scales: here only "tmax" (you can choose any color you like)
+  scale_color_manual(
+    name   = "Series",
+    values = c(tmax = "#D85711"),   # Dark orange from the CF code
+    labels = c(tmax = "Tmax")
+  ) +
+  scale_fill_manual(
+    name   = "Series",
+    values = c(tmax = "#D85711"),
+    labels = c(tmax = "Tmax")
+  ) +
+  # (e) Linetype legend: solid = actual, dashed = forecast
+  scale_linetype_manual(
+    name   = "Type",
+    values = c(actual = "solid", fit = "dashed"),
+    labels = c(actual = "Actual", fit = "Forecast")
+  ) +
+  labs(
+    x     = "Date",
+    y     = "Tmax (°C)",
+    title = "SF Downtown: December 2024 One‐Step‐Ahead Forecast of Tmax",
+    subtitle = paste0(
+      "Out‐of‐Sample (31‐Day) Forecast: ",
+      format(min(hold_dates), "%Y-%m-%d"), " to ",
+      format(max(hold_dates), "%Y-%m-%d")
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(size = 16, face = "bold"),
+    plot.subtitle  = element_text(size = 12, face = "italic"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+#| fig-width: 12
+#| fig-height: 6  
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (A) Find the 30 days immediately before the start of Dec 2024:
+
+# The first hold‐out day is:
+first_test_idx <- min(test_idx)      # index in all_dates for 2024-12-01
+
+# The 30 days before that:
+prev_idx <- (first_test_idx - 30):(first_test_idx - 1)
+
+# Double‐check that prev_idx is valid:
+#   head(all_dates[prev_idx], 3)  # should be 2024-11-01, 2024-11-02, ...
+#   tail(all_dates[prev_idx], 3)  # should be 2024-11-28, 2024-11-29, 2024-11-30
+
+prev_dates <- all_dates[prev_idx]
+
+# (B) Extract the “true” SF Tmax for those 30 days
+# SF is the first column of Y_max (after reordering so SF is col 1).
+prev_tmax <- Y_max[prev_idx, 1]
+
+# (C) Build a tiny tibble of “previous 30 days”
+library(tibble)
+df_prev <- tibble(
+  date = prev_dates,
+  tmax = as.numeric(prev_tmax)
+)
+
+# Check:
+# print(df_prev)
+# should show 2024-11-01 … 2024-11-30 in the date column and the real SF Tmax.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (D) Now modify the ggplot that you had for December 2024, e.g.:
+
+library(ggplot2)
+
+ggplot() +
+  # (1) Plot the 30‐day “history” in grey (solid line)
+  geom_line(
+    data = df_prev,
+    aes(x = date, y = tmax),
+    color     = "grey50",
+    size      = 0.8
+  ) +
+  # (2) 95% CI ribbon for Dec 2024 (as before)
+  geom_ribbon(
+    data = df_interval_hold,
+    aes(x    = date,
+        ymin = lower,
+        ymax = upper,
+        fill = series),
+    alpha = 0.3
+  ) +
+  # (3) Actual Dec 2024 line (solid, dark orange)
+  geom_line(
+    data = filter(df_af_hold, type == "actual"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (4) Forecast Dec 2024 line (dashed, dark orange)
+  geom_line(
+    data = filter(df_af_hold, type == "fit"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (5) Colour/Fill scales (only “tmax” series)
+  scale_color_manual(
+    name   = "Series",
+    values = c(tmax = "#D85711"),
+    labels = c(tmax = "Tmax")
+  ) +
+  scale_fill_manual(
+    name   = "Series",
+    values = c(tmax = "#D85711"),
+    labels = c(tmax = "Tmax")
+  ) +
+  # (6) Linetype legend: solid = actual/past, dashed = forecast
+  scale_linetype_manual(
+    name   = "Type",
+    values = c(
+      actual = "solid",
+      fit    = "dashed"
+    ),
+    labels = c(
+      actual = "Actual",
+      fit    = "Forecast"
+    )
+  ) +
+  # (7) Axis labels + title
+  labs(
+    x     = "Date",
+    y     = "Tmax (°C)",
+    title = "SF Downtown: Nov 2024 History + December 2024 Forecast of Tmax",
+    subtitle = paste0(
+      "Historical (Nov 1-Nov 30) in grey; ",
+      "Out‐of‐Sample Dec 1-Dec 31 with 95% CI ribbon"
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(size = 16, face = "bold"),
+    plot.subtitle  = element_text(size = 12, face = "italic"),
+    legend.position = "bottom"
+  )
+
+```
+
+
+
+
+
+
+```{r}
+#| eval: false
+#| include: false
+
 
 # 29) Plot last 60 days of training (before Dec 2024), actual Dec 2024, and Dec 2024 forecasts for SF
 
-# Determine indices for last 60 training days:
-last_train_date <- as.Date("2024-11-30")
-last_train_idx <- which(all_dates == last_train_date)
-start_plot <- max(1, last_train_idx - 59)
+# (a) find the index of "2024-10-31" within all_dates
+last_train_date <- as.Date("2024-10-31")
+last_train_idx  <- which(all_dates == last_train_date) 
+start_plot      <- max(1, last_train_idx - 60)
 
-# Data frame for last 60 days of training (observed)
+# (b) build the two vectors *using the same index range*
+date_seq <- all_dates[start_plot:last_train_idx]
+temp_seq <- sf_true_train[start_plot:last_train_idx]
+
 train_last60_df <- tibble(
-  date = all_dates[start_plot:last_train_idx],
-  temp = sf_true_train[start_plot:length(train_idx)],
+  date = date_seq,
+  temp = temp_seq,
   type = "Observed (Train)"
 )
 
@@ -4507,7 +4772,10 @@ ribbon_dec_df <- tibble(
   lower = sf_lower_test,
   upper = sf_upper_test
 )
+```
 
+
+```{r}
 library(ggplot2)
 ggplot() +
   geom_ribbon(data = ribbon_dec_df,
@@ -4547,8 +4815,9 @@ ggplot() +
     )
   ) +
   theme_minimal()
-
 ```
+
+
 
 ```{r}
 # (Assumes Y_train, filter_res_train, sf_hat_train, and all_dates/train_idx are already defined)
@@ -4590,14 +4859,14 @@ acf(sf_resid, na.action = na.pass, main = "ACF of SF Residuals")
 pacf(sf_resid, na.action = na.pass, main = "PACF of SF Residuals")
 par(mfrow = c(1,1))
 
-# 8) Ljung–Box test for autocorrelation at various lags
+# 8) Ljung-Box test for autocorrelation at various lags
 for (L in c(7, 14, 21, 28)) {
   lb <- Box.test(sf_resid, lag = L, type = "Ljung-Box", fitdf = 0)
-  cat(sprintf("Ljung–Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
+  cat(sprintf("Ljung-Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
               L, lb$statistic, lb$p.value))
 }
 
-# 9) Kolmogorov–Smirnov test for normality (since Shapiro‐Wilk fails for large n)
+# 9) Kolmogorov-Smirnov test for normality (since Shapiro‐Wilk fails for large n)
 sf_resid2 <- na.omit(sf_resid)
 ks <- ks.test(sf_resid2, "pnorm",
               mean = mean(sf_resid2),
@@ -4612,7 +4881,7 @@ plot(sf_fitted[valid_idx_train], sf_resid[valid_idx_train],
      main = "SF Residuals vs Fitted", col = "darkgray", pch = 16)
 abline(h = 0, col = "red", lwd = 2)
 
-# 11) Repeat ACF/PACF and Ljung–Box for each station
+# 11) Repeat ACF/PACF and Ljung-Box for each station
 for (j in seq_along(station_names)) {
   stn <- station_names[j]
   resid_j <- resid_matrix[, j]
@@ -4620,7 +4889,7 @@ for (j in seq_along(station_names)) {
   acf(resid_j, na.action = na.pass, main = paste("ACF of", stn, "Residuals"))
   pacf(resid_j, na.action = na.pass, main = paste("PACF of", stn, "Residuals"))
   lbj <- Box.test(resid_j, lag = 14, type = "Ljung-Box", fitdf = 0)
-  cat(sprintf("Ljung–Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
+  cat(sprintf("Ljung-Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
               stn, lbj$statistic, lbj$p.value))
 }
 
@@ -4738,7 +5007,7 @@ coords_mat <- station_coords %>% select(longitude, latitude) %>% as.matrix()
 dist_m <- distHaversine(coords_mat, sf_coord)
 dist_km <- dist_m / 1000
 
-# 12) Spatially varying loadings λ_j = exp(–d_j / ρ)
+# 12) Spatially varying loadings λ_j = exp(-d_j / ρ)
 rho <- 500
 lambda <- exp(- dist_km / rho)  # length = 4
 
@@ -4841,6 +5110,363 @@ mae_test  <- mean(abs(sf_true_test2 - sf_fore_test2))
 cat("Out‐of‐sample (Dec 2024) SF RMSE =", round(rmse_test, 3), "\n")
 cat("Out‐of‐sample (Dec 2024) SF MAE  =", round(mae_test, 3), "\n")
 
+
+```
+
+```{r}
+# ─────────────────────────────────────────────────────────────────────────────
+# (A) Extract the one-step forecast SD (√Var) for SF (first state) on each Dec day:
+sf_sd_test_min <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
+
+# (B) 95% quantile of the standard normal:
+z95 <- qnorm(0.975)   # ≈ 1.96
+
+# (C) 95% lower/upper bounds for SF Tmin forecasts (length = 31 for Dec 2024):
+sf_lower95_test_min <- sf_fore_test - z95 * sf_sd_test_min
+sf_upper95_test_min <- sf_fore_test + z95 * sf_sd_test_min
+
+```
+
+```{r}
+# ─────────────────────────────────────────────────────────────────────────────
+# (D) Compute the 95% half-width for each of the 31 hold-out days:
+half_width95_min <- (sf_upper95_test_min - sf_lower95_test_min) / 2
+
+# (E) Summary of those half-widths:
+summary(half_width95_min)   # ← RUN THIS; you’ll get Min, 1st Qu., Median, Mean, 3rd Qu., Max
+
+```
+
+```{r}
+# ─────────────────────────────────────────────────────────────────────────────
+library(tibble)
+
+# (F) Grab the 31 hold-out dates (2024-12-01 … 2024-12-31):
+hold_dates_min <- all_dates[test_idx]  # should be Dec 1, 2024 through Dec 31, 2024
+
+# (G) Assemble df_hold_min
+df_hold_min <- tibble(
+  date        = hold_dates_min,
+  actual_tmin = as.numeric(sf_true_test),         # actual SF Tmin for Dec 2024
+  fit_tmin    = as.numeric(sf_fore_test),         # forecasted SF Tmin
+  lower_tmin  = as.numeric(sf_lower95_test_min),
+  upper_tmin  = as.numeric(sf_upper95_test_min)
+)
+
+# (H) Inspect it:
+print(df_hold_min)   # ← RUN THIS; you should see 31 rows × 5 columns
+
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (I) Interval ribbon (one row per date, with columns date, lower, upper, series):
+df_interval_hold_min <- df_hold_min %>%
+  select(date, lower_tmin, upper_tmin) %>%
+  rename(lower = lower_tmin, upper = upper_tmin) %>%
+  mutate(series = "tmin")
+
+# Check:
+print(df_interval_hold_min)
+# Should have 31 rows: date | lower | upper | series="tmin"
+
+# (J) Actual vs. forecast (long format; two rows per date):
+df_af_hold_min <- df_hold_min %>%
+  select(date, actual_tmin, fit_tmin) %>%
+  rename(actual = actual_tmin, fit = fit_tmin) %>%
+  mutate(series = "tmin") %>%
+  pivot_longer(
+    cols      = c("actual", "fit"),
+    names_to  = "type",
+    values_to = "value"
+  )
+
+# Check:
+print(df_af_hold_min)
+# Should have 62 rows: for each date, one row type="actual", one row type="fit".
+
+```
+
+
+```{r}
+library(ggplot2)
+
+ggplot() +
+  # (a) 95% CI ribbon (fill by series="tmin")
+  geom_ribbon(
+    data = df_interval_hold_min,
+    aes(x    = date,
+        ymin = lower,
+        ymax = upper,
+        fill = series),
+    alpha = 0.3
+  ) +
+  # (b) Actual SF Tmin (solid line)
+  geom_line(
+    data = filter(df_af_hold_min, type == "actual"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (c) Forecast SF Tmin (dashed line)
+  geom_line(
+    data = filter(df_af_hold_min, type == "fit"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (d) Colour/Fill scales (single series = "tmin", dark orange)
+  scale_color_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue"),
+    labels = c(tmin = "Tmin")
+  ) +
+  scale_fill_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue"),
+    labels = c(tmin = "Tmin")
+  ) +
+  # (e) Linetype legend: solid = actual, dashed = fit
+  scale_linetype_manual(
+    name   = "Type",
+    values = c(actual = "solid", fit = "dashed"),
+    labels = c(actual = "Actual", fit = "Forecast")
+  ) +
+  labs(
+    x     = "Date",
+    y     = "Tmin (°C)",
+    title = "SF Downtown: December 2024 One-Step-Ahead Forecast of Tmin",
+    subtitle = paste0(
+      "Out-of-Sample (31-Day) Forecast: ",
+      format(min(hold_dates_min), "%Y-%m-%d"), " to ",
+      format(max(hold_dates_min), "%Y-%m-%d")
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(size = 16, face = "bold"),
+    plot.subtitle  = element_text(size = 12, face = "italic"),
+    legend.position = "bottom"
+  )
+
+```
+
+
+```{r}
+# ─────────────────────────────────────────────────────────────────────────────
+# (K) Find the first hold-out index, then grab the 30 days before it:
+first_test_idx_min <- min(test_idx)          # index of 2024-12-01 in all_dates
+prev_idx_min      <- (first_test_idx_min - 30):(first_test_idx_min - 1)
+
+# Sanity check your dates:
+# head(all_dates[prev_idx_min], 3)  # → 2024-11-01, 2024-11-02, ...
+# tail(all_dates[prev_idx_min], 3)  # → 2024-11-28, 2024-11-29, 2024-11-30
+
+prev_dates_min <- all_dates[prev_idx_min]
+
+# (L) Extract the “true” SF Tmin for those 30 days (SF is column 1 of Y_min):
+prev_tmin <- Y_min[prev_idx_min, 1]
+
+# (M) Build a tibble of the 30-day history:
+df_prev_min <- tibble(
+  date = prev_dates_min,
+  tmin = as.numeric(prev_tmin)
+)
+
+# Check:
+# print(df_prev_min)  # should show 2024-11-01 through 2024-11-30 and real SF Tmin
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (N) Now re-plot everything, but first draw the November line (grey):
+ggplot() +
+  # (1) Grey line for the 30 days of observed SF Tmin (Nov 1–30, 2024)
+  geom_line(
+    data = df_prev_min,
+    aes(x = date, y = tmin),
+    color = "grey50",
+    size  = 0.8
+  ) +
+  # (2) 95% CI ribbon for Dec 2024
+  geom_ribbon(
+    data = df_interval_hold_min,
+    aes(x    = date,
+        ymin = lower,
+        ymax = upper,
+        fill = series),
+    alpha = 0.3
+  ) +
+  # (3) Actual SF Tmin for Dec 2024 (solid line)
+  geom_line(
+    data = filter(df_af_hold_min, type == "actual"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (4) Forecast SF Tmin for Dec 2024 (dashed line)
+  geom_line(
+    data = filter(df_af_hold_min, type == "fit"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (5) Colour/Fill for series "tmin"
+  scale_color_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue"),
+    labels = c(tmin = "Tmin")
+  ) +
+  scale_fill_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue"),
+    labels = c(tmin = "Tmin")
+  ) +
+  # (6) Linetype legend: solid = actual/past, dashed = forecast
+  scale_linetype_manual(
+    name   = "Type",
+    values = c(actual = "solid", fit = "dashed"),
+    labels = c(actual = "Actual", fit = "Forecast")
+  ) +
+  labs(
+    x     = "Date",
+    y     = "Tmin (°C)",
+    title = "SF Downtown: Nov 2024 History + Dec 2024 Forecast of Tmin",
+    subtitle = paste0(
+      "Historical (Nov 1–Nov 30) in grey; ",
+      "Out-of-Sample Dec 1–Dec 31 with 95 % CI ribbon"
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title     = element_text(size = 16, face = "bold"),
+    plot.subtitle  = element_text(size = 12, face = "italic"),
+    legend.position = "bottom"
+  )
+
+```
+
+
+```{r}
+#| fig-height: 6
+#| fig-width: 12
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 1) Re‐shape “Nov 2024 history” for Tmax and Tmin into a common format:
+df_prev_tmax2 <- df_prev %>%
+  rename(value = tmax) %>%         # rename tmax → value
+  mutate(
+    series = "tmax",               # tag as “tmax”
+    type   = "history"             # tag as “history”
+  ) %>%
+  select(date, series, type, value)
+
+df_prev_tmin2 <- df_prev_min %>%
+  rename(value = tmin) %>%         # rename tmin → value
+  mutate(
+    series = "tmin",               # tag as “tmin”
+    type   = "history"             # tag as “history”
+  ) %>%
+  select(date, series, type, value)
+
+df_prev_all <- bind_rows(df_prev_tmax2, df_prev_tmin2)
+# df_prev_all has columns: date | series ("tmax"/"tmin") | type="history" | value
+
+# 2) Stack the two “Dec 2024 95 % CI” data.frames:
+df_interval_hold_all <- bind_rows(
+  df_interval_hold_min %>% select(date, lower, upper, series),
+  df_interval_hold     %>% select(date, lower, upper, series)
+)
+# now df_interval_hold_all has columns: date | lower | upper | series ("tmin"/"tmax")
+
+# 3) Stack the two “Dec 2024 actual vs. fit” data.frames:
+df_af_hold_all <- bind_rows(
+  df_af_hold_min %>% select(date, series, type, value),
+  df_af_hold     %>% select(date, series, type, value)
+)
+# df_af_hold_all has: date | series ("tmin"/"tmax") | type ∈ {actual, fit} | value
+
+# 4) One‐panel ggplot putting everything together:
+ggplot() +
+  # (a) Nov 2024 history (solid lines for both series)
+  geom_line(
+    data = df_prev_all,
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.7
+  ) +
+  # (b) Dec 2024 95 % CI ribbons (one ribbon per series)
+  geom_ribbon(
+    data = df_interval_hold_all,
+    aes(x = date, ymin = lower, ymax = upper, fill = series),
+    alpha = 0.25
+  ) +
+  # (c) Dec 2024 actuals (solid lines; these appear only on Dec dates)
+  geom_line(
+    data = filter(df_af_hold_all, type == "actual"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (d) Dec 2024 forecasts (dashed lines)
+  geom_line(
+    data = filter(df_af_hold_all, type == "fit"),
+    aes(x = date, y = value, color = series, linetype = type),
+    size = 0.8
+  ) +
+  # (e) Color/fill scales: steelblue for Tmin; darkorange for Tmax
+  scale_color_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue", tmax = "#D85711"),
+    labels = c(tmin = "Tmin", tmax = "Tmax")
+  ) +
+  scale_fill_manual(
+    name   = "Series",
+    values = c(tmin = "steelblue", tmax = "#D85711"),
+    labels = c(tmin = "Tmin", tmax = "Tmax")
+  ) +
+  # (f) Linetype legend: history=solid, actual=solid, fit=dashed
+  scale_linetype_manual(
+    name   = "Type",
+    values = c(
+      history = "solid",
+      actual  = "solid",
+      fit     = "dashed"
+    ),
+    labels = c(
+      history = "Historical (Nov 2024)",
+      actual  = "Actual (Dec 2024)",
+      fit     = "Forecast (Dec 2024)"
+    )
+  ) +
+  # (g) Labels and theme
+  labs(
+    x        = "Date",
+    y        = "Temperature (°C)",
+    title    = "SF Downtown: Nov 2024 History & Dec 2024 Forecasts for Tmin & Tmax",
+    subtitle = paste0(
+      "Nov 1–30 2024 in solid; Dec 1–31 2024 forecasts with 95 % CI ribbon"
+    )
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title    = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 11, face = "italic"),
+    legend.position = "bottom"
+  )
+
+```
+
+
+
+
+
+
+
+### end of new graphs
+
+
+```{r}
 # 28) 90% PI for SF forecasts on test
 sf_sd_test <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
 z90 <- qnorm(0.95)
@@ -4927,6 +5553,7 @@ ggplot() +
   theme_minimal()
 ```
 
+
 ```{r}
 #checkresiduals
 # (Assumes Y_train, filter_res_train, sf_hat_train, and all_dates/train_idx are already defined)
@@ -4968,14 +5595,14 @@ acf(sf_resid, na.action = na.pass, main = "ACF of SF Residuals")
 pacf(sf_resid, na.action = na.pass, main = "PACF of SF Residuals")
 par(mfrow = c(1,1))
 
-# 8) Ljung–Box test for autocorrelation at various lags
+# 8) Ljung-Box test for autocorrelation at various lags
 for (L in c(7, 14, 21, 28)) {
   lb <- Box.test(sf_resid, lag = L, type = "Ljung-Box", fitdf = 0)
-  cat(sprintf("Ljung–Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
+  cat(sprintf("Ljung-Box (lag=%d):  statistic=%.3f, p‐value=%.3f\n",
               L, lb$statistic, lb$p.value))
 }
 
-# 9) Kolmogorov–Smirnov test for normality (since Shapiro‐Wilk fails for large n)
+# 9) Kolmogorov-Smirnov test for normality (since Shapiro‐Wilk fails for large n)
 sf_resid2 <- na.omit(sf_resid)
 ks <- ks.test(sf_resid2, "pnorm",
               mean = mean(sf_resid2),
@@ -4990,7 +5617,7 @@ plot(sf_fitted[valid_idx_train], sf_resid[valid_idx_train],
      main = "SF Residuals vs Fitted", col = "darkgray", pch = 16)
 abline(h = 0, col = "red", lwd = 2)
 
-# 11) Repeat ACF/PACF and Ljung–Box for each station
+# 11) Repeat ACF/PACF and Ljung-Box for each station
 for (j in seq_along(station_names)) {
   stn <- station_names[j]
   resid_j <- resid_matrix[, j]
@@ -4998,7 +5625,7 @@ for (j in seq_along(station_names)) {
   acf(resid_j, na.action = na.pass, main = paste("ACF of", stn, "Residuals"))
   pacf(resid_j, na.action = na.pass, main = paste("PACF of", stn, "Residuals"))
   lbj <- Box.test(resid_j, lag = 14, type = "Ljung-Box", fitdf = 0)
-  cat(sprintf("Ljung–Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
+  cat(sprintf("Ljung-Box (lag=14) for %s: statistic=%.3f, p‐value=%.3f\n",
               stn, lbj$statistic, lbj$p.value))
 }
 
