@@ -160,7 +160,7 @@ seasonal_indices$Month <- factor(seasonal_indices$Month,
 ```{r}
 graph_4 <- ggplot(seasonal_indices, aes(x = Month, y = Seasonal, group = Period, color = Period)) +
   geom_hline(yintercept = 0, color = "orange", linetype = "dashed", linewidth = 0.5) +
-  geom_line(size = 0.5) +
+  geom_line(linewidth = 0.5) +
   geom_point(size = 0.75) +
   scale_color_viridis_d(option = "H") +
   ggtitle("Evolution of Seasonal Component") +
@@ -249,7 +249,7 @@ colnames(ghcn) <- c(
   "prcp_tenthmm"
 )
 
-ghcnghcn <- ghcn %>%
+ghcn <- ghcn %>%
   mutate(
     date  = as_date(date),                   # YYYY-MM-DD → Date
     tmin  = tmin_tenthC / 10,                # → °C
@@ -276,7 +276,7 @@ sf <- ghcn %>%
 #| fig-height: 5
 
 library(ggplot2)
-library(scales)   # for date formatting
+library(scales)
 
 ggplot(sf, aes(x = date)) +
   # 1. ribbon between Tmin and Tmax
@@ -632,6 +632,7 @@ HMM_2s <- ggplot(df_plot, aes(x = time)) +
   )
 
 print(HMM_2s)
+ggsave("HMM_2s.pdf", plot = HMM_2s, device = "pdf", width = 10, height = 6, units = "in")
 ```
 
 ```{r}
@@ -649,7 +650,7 @@ results_df <- data.frame(
                values_to = "value")
 
 # Create the plot
-2state_hmm <- ggplot(results_df, aes(x = time_index, y = value)) +
+twostate_hmm <- ggplot(results_df, aes(x = time_index, y = value)) +
   geom_line() +
   facet_wrap(~variable, scales = "free", ncol = 1) +
   theme_minimal() +
@@ -657,10 +658,13 @@ results_df <- data.frame(
        x = "Time", y = "Value")
 
 # Show the plot
-plot(2state_hmm)
+plot(twostate_hmm)
 ```
 
 ```{r}
+#| fig-width: 8
+#| fig-height: 4
+
 # Get time and values
 time_vals <- as.numeric(time(ts_gistemp_ds))
 values <- as.numeric(ts_gistemp_ds)
@@ -685,7 +689,12 @@ p <- ggplot(df, aes(x = time, y = value, color = state, fill = state)) +
        x = "Time", y = "Deseasonalized Temperature Anomaly") +
   theme_minimal() +
   scale_color_manual(values = c("darkorange", "steelblue")) +
-  scale_fill_manual(values = c("darkorange", "steelblue"))
+  scale_fill_manual(values = c("darkorange", "steelblue")) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10, face = "italic"),
+    axis.text = element_text(color = "black")
+  )
 
 # Show plot
 print(p)
@@ -767,6 +776,8 @@ coef3  # (Intercept and Slope for State 3)
 
 Explore the use of Dynamic Linear Models such as random walk plus noise or locally linear trend to address the presence of acceleration/deceleration in global warming. You can opt to use more structured models (if you choose a model with seasonality, you can use the full time series). Comment on the results, and compare them with the ones obtained using HMMs.
 
+### 2.2.a.
+
 > Stefano:
 
 ```{r}
@@ -830,7 +841,7 @@ sims.level <- replicate(
   n.sims,
   {
     full.draw <- dlmBSample(modFilt)       # one draw
-    as.numeric(full.draw[-1, 1])           # drop init, take level                                        QUI IL TOSTAPANE INIZIA A SCALDARSI
+    as.numeric(full.draw[-1, 1])           # drop init, take level              QUI IL TOSTAPANE INIZIA A SCALDARSI
   }
 )
 
@@ -1060,7 +1071,8 @@ time_idx <- seq(
 
 ```{r}
 #| label: Visual representation of the whole dataset
-
+#| fig-width: 12
+#| fig-height: 6
 
 df_rwpn <- data.frame(
   Year     = time_idx,
@@ -1110,13 +1122,16 @@ ggplot(df_rwpn, aes(x = Year)) +
 ```
 
 ```{r}
+#| fig-width: 12
+#| fig-height: 6
+
 #| label: Visual representation of a subset (1972-1977)
 
 # Subset the data.frame for years 1972 ≤ Year ≤ 1977
 df_rwpn_sub <- subset(df_rwpn, Year >= 1972 & Year <= 1977)
 
 # 3. Plot the 1972–1977 subset
-ggplot(df_rwpn_sub, aes(x = Year)) +
+ggplot_df_rwpn_sub <- ggplot(df_rwpn_sub, aes(x = Year)) +
   
   # (a) Original data 
   geom_line(aes(y = Temp),
@@ -1153,6 +1168,8 @@ ggplot(df_rwpn_sub, aes(x = Year)) +
   # 6. Ensure x-axis ticks are sensible for a 5-year window
   scale_x_continuous(breaks = seq(1972, 1977, by = 1))
 
+print(ggplot_df_rwpn_sub)
+ggsave("ggplot_df_rwpn_sub.pdf", plot = ggplot_df_rwpn_sub, device = "pdf", width = 12, height = 6, units = "in")
 ```
 
 #### 2.2.b.(i) RWPN Model evaluation
@@ -1169,11 +1186,11 @@ df_resid <- data.frame(
 
 #— 2. (a) Time-series plot of Std. Residuals —#
 p_ts <- ggplot(df_resid, aes(x = Year, y = StdResid)) +
-  geom_line(color = "steelblue", size = 0.8) +
+  geom_line(color = "steelblue", linewidth = 0.8) +
   geom_hline(yintercept = c(-2, 2),
              linetype   = "dashed",
              color      = "orange",
-             size       = 0.6) +
+             linewidth  = 0.6) +
   labs(
     title = "Standardized One-Step-Ahead Errors (Std. Residuals)",
     x     = "Year",
@@ -1613,7 +1630,7 @@ print(W_est)
 
 ```{r}
 #| fig-width: 12
-#| fig-height: 12
+#| fig-height: 6
 
 # 1. Compute smoothing covariances → standard deviations
 Ct_list    <- dlmSvd2var(smthInd$U.S, smthInd$D.S)
@@ -1853,7 +1870,8 @@ $$
 \boldsymbol{\theta}_t &= \boldsymbol{\theta}_{t-1} + \mathbf{w}_t, 
   &\mathbf{w}_t &\sim \mathcal{N}(\mathbf{0}, \mathbf{W}),
 \end{aligned}
-$$ where
+$$ 
+where
 
 $$
 \mathbf{W} = 
@@ -2460,7 +2478,7 @@ overlay_plot_ci <- ggplot(df_bound, aes(x = date)) +
     x     = "Date",
     y     = "Value (°C / latent)",
     color = "",
-    title = "2020–2024: De-seasonalized Tmin, Tmax and Smoothed ξₜ (with 95% CI)"
+    title = "2020–2024: De-seasonalized Tmin, Tmax and Smoothed ξ (with 95% CI)"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -2592,8 +2610,8 @@ overlay_plot_ci <- ggplot(df_bound, aes(x = date)) +
     x     = "Date",
     y     = "Value (°C / latent)",
     color = "",
-    title = "De-seasonalized Tmin, Tmax + Smoothed ξ (95% CI)",
-    subtitle = "Last 60 Days (01-07-2024 to 31-12-2024)"
+    title = "De-seasonalized minimum temperature, maximum temperature and smoothed ξ (95% CI)",
+    subtitle = "Last 60 Days (01-11-2024 to 31-12-2024)"
     ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -2603,6 +2621,7 @@ overlay_plot_ci <- ggplot(df_bound, aes(x = date)) +
 )
 
 print(overlay_plot_ci)
+ggsave("overlay_plot_cipdf.pdf", plot = overlay_plot_ci, device = "pdf", width = 12, height = 6, units = "in")
 ```
 
 #### 3.2.(c).(i) Evaluating the model
@@ -2659,6 +2678,196 @@ checkresiduals(std_resid_CF[,2])
 jarque.bera.test(std_resid_CF[,1])
 jarque.bera.test(std_resid_CF[,2])
 ```
+```{r}
+#| label: Better version of the tests above
+
+library(ggplot2)
+library(forecast)    # for ggAcf or checkresiduals if you prefer, but here we do manual ACF
+library(tseries)     # for Jarque‐Bera test (jarque.bera.test)
+library(dplyr)       # for data wrangling
+library(tidyr)
+
+
+#► 1. Extract raw and standardized one‐step‐ahead residuals from your fitted CF model
+raw_resid_CF <- residuals(filtCF, type = "raw")
+std_resid_CF <- residuals(filtCF, type = "standardized", sd = FALSE)
+
+# Assume std_resid_CF is a two‐column ts or matrix, with column 1 = Tmin, column 2 = Tmax
+# Derive a “time index” from the residuals object (this works if std_resid_CF is a 'ts')
+time_idx <- time(std_resid_CF)
+
+#► 2. Build a “long” data.frame of standardized residuals for plotting
+df_resid_CF <- data.frame(
+  Year     = rep(time_idx, times = 2),
+  StdResid = c(std_resid_CF[, 1], std_resid_CF[, 2]),
+  Variable = rep(c("Tmin", "Tmax"), each = length(time_idx))
+)
+
+#───────────────────────────────────────────────────────────────────────────────
+#► 3. (a) Time‐series plot of standardized residuals for Tmin and Tmax
+p_ts_CF <- ggplot(df_resid_CF, aes(x = Year, y = StdResid)) +
+  geom_line(color = "steelblue", linewidth = 0.7) +
+  geom_hline(yintercept = c(-2, 2),
+             linetype   = "dashed",
+             color      = "orange",
+             linewidth  = 0.6) +
+  facet_wrap(~ Variable, ncol = 1, scales = "free_y") +
+  labs(
+    title = "CF Model: Standardized One‐Step‐Ahead Errors",
+    x     = "Year",
+    y     = "Std. Residual"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold", size = 15, hjust = 0.5),
+    strip.text      = element_text(face = "bold", size = 13),
+    axis.title      = element_text(size = 13),
+    axis.text       = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+#► 3. (b) ACF plots for standardized residuals (up to lag 40)
+# --- Suppose std_resid_CF is your n×2 matrix (or ts) of standardized residuals:
+# std_resid_CF[,1] = Tmin residuals; std_resid_CF[,2] = Tmax residuals
+
+# 1. Compute ACF objects (up to lag = 40) for each series, WITHOUT plotting:
+acf_tmin <- acf(std_resid_CF[, 1], plot = FALSE, lag.max = 40)
+acf_tmax <- acf(std_resid_CF[, 2], plot = FALSE, lag.max = 40)
+
+# 2. Convert the fractional lags to “integer days” (or whichever time unit your ns/freq imply)
+freq <- frequency(std_resid_CF)  
+# (if frequency(std_resid_CF) is 365, then fractional lag 1 = 1/365 years → *365 = 1 day)
+
+lags_tmin <- as.numeric(acf_tmin$lag) * freq    # length = 41 (lags 0,1,2,...,40)
+lags_tmax <- as.numeric(acf_tmax$lag) * freq
+
+# 3. Drop lag 0 in each (we usually skip the 0 point when making a “correlogram”)
+#    and grab acf‐values accordingly:
+df_acf_CF <- bind_rows(
+  data.frame(
+    Lag      = lags_tmin[-1],                  # now 1,2,3,...,40
+    ACF      = as.numeric(acf_tmin$acf)[-1],
+    Variable = "Tmin"
+  ),
+  data.frame(
+    Lag      = lags_tmax[-1],
+    ACF      = as.numeric(acf_tmax$acf)[-1],
+    Variable = "Tmax"
+  )
+)
+
+# 4. Plot with ggplot2, making sure to map x = Lag, y = ACF:
+#    Also pick a “reasonable” bar width so that consecutive bars don’t overlap.
+p_acf_CF <- ggplot(df_acf_CF, aes(x = Lag, y = ACF)) +
+  geom_col(fill = "steelblue", color = NA, width = 0.8) +
+  geom_hline(yintercept = 0, color = "gray40", size = 0.4) +
+  # 95% confidence bounds = ±1.96 / sqrt(n_obs), n_obs = number of residuals
+  geom_hline(
+    yintercept = c(-1.96 / sqrt(nrow(std_resid_CF)),
+                   1.96 / sqrt(nrow(std_resid_CF))),
+    linetype = "dashed",
+    color    = "orange",
+    size     = 0.4
+  ) +
+  facet_wrap(~ Variable, ncol = 1, scales = "free_y") +
+  labs(
+    title = "CF Model: ACF of Standardized Residuals",
+    x     = "Lag (days)",
+    y     = "ACF"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold", size = 15, hjust = 0.5),
+    strip.text      = element_text(face = "bold", size = 13),
+    axis.title      = element_text(size = 13),
+    axis.text       = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+#► 3. (c) Histogram + Normal density overlay for each variable
+# Compute empirical SD (should be ≈ 1 if truly standardized)
+emp_sd_tmin <- sd(std_resid_CF[, 1])
+emp_sd_tmax <- sd(std_resid_CF[, 2])
+
+# We’ll build separate histograms and then facet
+df_hist_CF <- df_resid_CF %>%
+  group_by(Variable) %>%
+  mutate(EmpSD = if_else(Variable == "Tmin", emp_sd_tmin, emp_sd_tmax))
+
+p_hist_CF <- ggplot(df_hist_CF, aes(x = StdResid)) +
+  geom_histogram(aes(y = ..density..),
+                 bins   = 300,
+                 fill   = "steelblue",
+                 color  = "white",
+                 alpha  = 0.6) +
+  stat_function(
+    fun  = dnorm,
+    args = list(mean = 0,
+                sd   = unique(df_hist_CF$EmpSD[df_hist_CF$Variable == unique(df_hist_CF$Variable)])),
+    color = "orange",
+    size  = 1
+  ) +
+  facet_wrap(~ Variable, ncol = 1) +
+  labs(
+    title = "CF Model: Histogram of Standardized Residuals (+ Normal Density)",
+    x     = "Std. Residual",
+    y     = "Density"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 15, hjust = 0.5),
+    strip.text       = element_text(face = "bold", size = 13),
+    axis.title       = element_text(size = 13),
+    axis.text        = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+#► 3. (d) Q–Q Plots of standardized residuals for each variable
+p_qq_CF <- ggplot(df_resid_CF, aes(sample = StdResid)) +
+  stat_qq(color    = "steelblue", size = 1.8) +
+  stat_qq_line(color = "orange",  size = 0.6) +
+  facet_wrap(~ Variable, ncol = 1) +
+  labs(
+    title = "CF Model: Normal Q–Q Plot of Standardized Residuals",
+    x     = "Theoretical Quantiles",
+    y     = "Sample Quantiles"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 15, hjust = 0.5),
+    strip.text       = element_text(face = "bold", size = 13),
+    axis.title       = element_text(size = 13),
+    axis.text        = element_text(size = 11),
+    panel.grid.major = element_line(color = "gray85", size = 0.4),
+    panel.grid.minor = element_blank()
+  )
+
+#► 4. Ljung–Box tests for whiteness (lag = 20) on each variable
+lb_tmin_CF <- Box.test(std_resid_CF[, 1], type = "Ljung-Box", lag = 20)
+lb_tmax_CF <- Box.test(std_resid_CF[, 2], type = "Ljung-Box", lag = 20)
+
+#► 5. Jarque–Bera tests for Normality (optional, if you also want to check)
+jb_tmin_CF <- jarque.bera.test(std_resid_CF[, 1])
+jb_tmax_CF <- jarque.bera.test(std_resid_CF[, 2])
+
+#► 6. Print Ljung–Box and Jarque–Bera results to console
+print(lb_tmin_CF)
+print(lb_tmax_CF)
+
+print(jb_tmin_CF)
+print(jb_tmax_CF)
+
+#► 7. Finally, display all four ggplots (you can arrange them using patchwork, cowplot, or simply print sequentially)
+p_ts_CF
+p_acf_CF
+p_hist_CF
+p_qq_CF
+```
+
+
 
 ```{r}
 # 1.  Compute one‐step‐ahead forecasts and 95% prediction intervals
