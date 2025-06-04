@@ -107,6 +107,66 @@ ts_gistemp <- ts(as.vector(t(monthly_gistemp)),
                  frequency = 12)
 ```
 
+```{r}
+dates <- seq.Date(from = as.Date("1880-01-01"), 
+                  by = "month", 
+                  length.out = length(ts_gistemp))
+```
+
+Now we create a dataframe which contains the date and the actual values taken by the time series.
+
+```{r}
+ts_df <- data.frame(date = dates, value = as.numeric(ts_gistemp))
+```
+
+```{r}
+graph_1 <- ggplot(ts_df, aes(x = date, y = value)) +
+  # Map the "raw data" line to a color‐label "Data"
+  geom_line(aes(color = "Data"), linewidth = 0.25) +
+  # Map the LOESS fit to a color‐label "Smoothed Trend"
+  geom_smooth(
+    aes(color = "Smoothed Trend"),
+    method = "loess",
+    se = TRUE,
+    linewidth = 0.5,
+    show.legend = TRUE
+  ) +
+  # We can choose whether to include the horizontal line in the legend.
+  # If you do want it in the legend, map it similarly to a label inside aes(color=...). 
+  # Otherwise, keep it outside aes() so it does not appear in the legend.
+  geom_hline(
+    yintercept = 0,
+    color = "gray20",
+    linetype = "dashed",
+    linewidth = 0.5
+  ) +
+  labs(
+    # (no title here)
+    x = "Date",
+    y = "Temperature Anomaly (°C)",
+    color = NULL   # Remove the default legend title
+  ) +
+  scale_color_manual(
+    # Match the aes(color=…) labels to actual colors:
+    values = c(
+      "Data" = "orange",
+      "Smoothed Trend" = "steelblue"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    plot.subtitle   = element_text(size = 14, hjust = 0.5),
+    axis.title      = element_text(face = "bold"),
+    axis.text       = element_text(color = "gray20"),
+    legend.position = "bottom",           # Move legend below the plot
+    legend.box      = "horizontal",       # Arrange items horizontally
+    legend.text     = element_text(size = 10)
+  )                                            
+  
+print(graph_1)
+ggsave("graph_1.pdf", plot = graph_1, device = "pdf", width = 10, height = 6, units = "in")
+```
+
 Despite incluing a seasonal component in the DLM at §2.2, we nonetheless require a de-seasonalised time series for the HMM analysis at §2.1
 
 ```{r}
@@ -269,7 +329,7 @@ sf <- ghcn %>%
   arrange(date)
 ```
 
-### 1.2.(a)
+### 1.2.(a) Seasonality
 
 ```{r}
 #| fig-width: 10
@@ -865,7 +925,7 @@ coef3  # (Intercept and Slope for State 3)
 
 Explore the use of Dynamic Linear Models such as random walk plus noise or locally linear trend to address the presence of acceleration/deceleration in global warming. You can opt to use more structured models (if you choose a model with seasonality, you can use the full time series). Comment on the results, and compare them with the ones obtained using HMMs.
 
-### 2.2.a.
+### 2.2.a. Independent Random Walk plus Noise
 
 > Stefano:
 
@@ -1004,7 +1064,7 @@ Box.test(std_resid, type = "Ljung-Box", lag = 20)
 ```{r}
 #| label: Parameter uncertainty
 
-# 1. MLE with Hessian                                   (ATTENTO CHE CI METTE UN BOTTO, VALUTIAMO SE FARE SU R ONLINE CHE QUI IL TOSTAPANE SI FONDE - STEFANO)
+# 1. MLE with Hessian                                   
 fit_hess <- dlmMLE(ts_gistemp, parm = init, build = buildLL2S, hessian = TRUE)
 
 # 2. Extract log-parameters & invert Hessian
@@ -1211,10 +1271,11 @@ ggplot(df_rwpn, aes(x = Year)) +
 ```
 
 ```{r}
+#| label: Visual representation of a subset (1972-1977)
 #| fig-width: 12
 #| fig-height: 6
 
-#| label: Visual representation of a subset (1972-1977)
+
 
 # Subset the data.frame for years 1972 ≤ Year ≤ 1977
 df_rwpn_sub <- subset(df_rwpn, Year >= 1972 & Year <= 1977)
@@ -1730,7 +1791,7 @@ sd_tmax    <- sqrt(var_tmax)[-1]
 
 # 2. Build 95% credible intervals via FFBS
 set.seed(123)
-n.sims     <- 50                                                                # Questo lo aumentiamo più tardi, senò ci mette troppo
+n.sims     <- 50                                                                
 sims_array <- replicate(
   n.sims,
   {
@@ -1858,7 +1919,7 @@ mae  <- colMeans(abs(e))
 lower2 <- y_pred2 - 1.96 * pred_se2
 upper2 <- y_pred2 + 1.96 * pred_se2
 cov  <- sapply(1:2, function(i)
-  mean(temp[ok,i] >= lower2[ok,i] & y[ok,i] <= upper2[ok,i]) * 100
+  mean(y[ok,i] >= lower2[ok,i] & y[ok,i] <= upper2[ok,i]) * 100
 )
 cat("Series   RMSE    MAE   95% PI Coverage\n")
 cat(sprintf("Tmin   %6.3f %6.3f    %5.1f%%\n",
@@ -2154,90 +2215,7 @@ ggplot(df_melt, aes(x = time, y = Value,
   )
 ```
 
-```{r}
-#add credible intervals 95%
-#--- load packages ----------------------------------------------------------
 
-#--- 1) Create df for observed & predicted, subset to 1990-1991 -------------
-df <- data.frame(
-    time       = as.numeric(time(temp)),         # numeric time index for `temp`
-    Tmin       = as.numeric(temp[,"Tmin"]),       # observed Tmin
-    Tmax       = as.numeric(temp[,"Tmax"]),       # observed Tmax
-    Tmin_pred  = as.numeric(y_pred[,"temp.Tmin"]),     # predicted Tmin
-    Tmax_pred  = as.numeric(y_pred[,"temp.Tmax"])      # predicted Tmax
-)
-
-df_sub <- subset(df, time >= 1990 & time <= 1991)
-
-df_melt <- melt(
-    df_sub,
-    id.vars        = "time",
-    variable.name  = "Series_Source",
-    value.name     = "Value"
-) %>%
-    mutate(
-        Series = ifelse(grepl("^Tmin",   Series_Source), "Tmin", "Tmax"),
-        Source = ifelse(grepl("_pred$",  Series_Source), "Estimated", "Original")
-    )
-
-#--- 2) Create df for lower/upper bounds, subset to 1990-1991 --------------
-#    We assume `lower` and `upper` are ts objects with the same time index as `temp`
-#    and with columns "Tmin" and "Tmax".  
-ci_df <- data.frame(
-    time        = as.numeric(time(lower)),
-    Tmin_lower  = as.numeric(lower[,"y_pred.temp.Tmin"]),
-    Tmin_upper  = as.numeric(upper[,"y_pred.temp.Tmin"]),
-    Tmax_lower  = as.numeric(lower[,"y_pred.temp.Tmax"]),
-    Tmax_upper  = as.numeric(upper[,"y_pred.temp.Tmax"])
-)
-
-ci_sub <- subset(ci_df, time >= 1990 & time <= 1991)
-
-# Pivot into long form with columns (time, Series, lower, upper)
-ci_melt <- bind_rows(
-    ci_sub %>% transmute(time, Series = "Tmin",
-                         lower = Tmin_lower, upper = Tmin_upper),
-    ci_sub %>% transmute(time, Series = "Tmax",
-                         lower = Tmax_lower, upper = Tmax_upper)
-)
-
-#--- 3) Plot everything -----------------------------------------------------
-ggplot() +
-    # (a) 95% prediction-interval ribbon in grey behind the lines
-    geom_ribbon(
-        data = ci_melt,
-        aes(x = time, ymin = lower, ymax = upper),
-        fill  = "grey40",
-        alpha = 0.3
-    ) +
-    # (b) observed vs. predicted lines on top
-    geom_line(
-        data = df_melt,
-        aes(x = time, y = Value,
-            color = Source, linetype = Source),
-        size = 1
-    ) +
-    facet_wrap(~ Series, scales = "free_y", ncol = 1) +
-    scale_color_manual(
-        values = c("Original" = "black", "Estimated" = "firebrick")
-    ) +
-    scale_linetype_manual(
-        values = c("Original" = "solid", "Estimated" = "solid")
-    ) +
-    labs(
-        x     = "Time (year)",
-        y     = "Temperature",
-        title = "Original vs One-Step-Ahead DLM (1990-1991) with 95% Intervals"
-    ) +
-    theme_bw(base_size = 14) +
-    theme(
-        legend.position  = "top",
-        strip.text       = element_text(face = "bold", size = 14),
-        panel.grid.minor = element_blank(),
-        panel.grid.major = element_line(color = "grey80")
-    )
-
-```
 
 ```{r}
 # 1. MLE with Hessian (may be slow)
@@ -3884,108 +3862,6 @@ ggplot() +
   )
 ```
 
-```{r}
-library(ggplot2)
-library(dplyr)
-
-# 1. Prepare data frames for Tmin plotting
-
-# A. Last 60 days of observed SF TMIN:
-sf_min_all  <- Y_min[, 1]                              # SF’s full TMIN series
-all_min_dates<- as.Date(tmin_wide$date)                # vector of all dates for TMIN
-end_min_date <- tail(all_min_dates, 1)                 # last observed date
-plot_window  <- 60                                     
-start_idx    <- length(all_min_dates) - plot_window + 1 
-
-actual_min_df <- data.frame(
-  date = all_min_dates[start_idx:length(all_min_dates)], 
-  temp = sf_min_all[start_idx:length(all_min_dates)],    
-  type = "Observed"
-)
-
-# B. 14-day-ahead forecast (mean TMIN):
-fore_min_dates <- seq(end_min_date + 1, by = "day", length.out = n_ahead)
-forecast_min_df <- data.frame(
-  date = fore_min_dates,
-  temp = sf_min_fore_mean,
-  type = "Forecast mean"
-)
-
-# C. 90 % prediction interval (ribbon) for TMIN:
-ribbon_min_df <- data.frame(
-  date  = fore_min_dates,
-  lower = sf_min_fore_lower,
-  upper = sf_min_fore_upper
-)
-
-# Combine observed + forecast into one data frame so we can map “type” to color/linetype:
-combined_min_df <- bind_rows(actual_min_df, forecast_min_df)
-
-# 2. Now build the ggplot
-
-ggplot() +
-  # 2.1. Ribbon for 90 % PI (fills under forecast range for TMIN):
-  geom_ribbon(
-    data = ribbon_min_df,
-    aes(x = date, ymin = lower, ymax = upper),
-    fill = "steelblue",  # choose a color that stands out (e.g. “darkorange”)
-    alpha = 0.2
-  ) +
-  # 2.2. Observed SF TMIN line (last 60 days):
-  geom_line(
-    data = filter(combined_min_df, type == "Observed"),
-    aes(x = date, y = temp, color = type),
-    size = 1.2
-  ) +
-  # 2.3. Forecasted mean TMIN line (next 14 days):
-  geom_line(
-    data = filter(combined_min_df, type == "Forecast mean"),
-    aes(x = date, y = temp, color = type),
-    size = 1.2
-  ) +
-  # 2.4. (Optional) dashed lines for the lower/upper 90 % PI:
-  geom_line(
-    data = ribbon_min_df,
-    aes(x = date, y = lower),
-    color = "steelblue", 
-    linetype = "dashed",
-    size = 0.8
-  ) +
-  geom_line(
-    data = ribbon_min_df,
-    aes(x = date, y = upper),
-    color = "steelblue", 
-    linetype = "dashed",
-    size = 0.8
-  ) +
-  # 3. Manually set colors for “Observed” vs “Forecast mean”:
-  scale_color_manual(
-    name = "",
-    values = c("Observed" = "black", "Forecast mean" = "steelblue")
-  ) +
-  # 4. Constrain the plotting window to last 60 days + 14 days of forecasts:
-  coord_cartesian(
-    xlim = c(all_min_dates[start_idx], end_min_date + n_ahead),
-    ylim = range(
-      c(actual_min_df$temp, ribbon_min_df$lower, ribbon_min_df$upper),
-      na.rm = TRUE
-    )
-  ) +
-  # 5. Labels and theme:
-  labs(
-    title = "San Francisco Daily Min Temperature: Last 60 Days + 14-Day Forecast",
-    x = "Date",
-    y = "Min Temperature (°C)"
-  ) +
-  theme_bw() +
-  theme(
-    legend.position = c(0.15, 0.85),
-    legend.background = element_rect(fill = "white", color = "grey80"),
-    plot.title = element_text(face = "bold", size = 14, hjust = 0.5)
-  )
-
-```
-
 This plot illustrates the model's fit and forecast. The black line shows the recent actual SF maximum temperatures. The blue line and band show the forecasted mean and the 90% confidence interval for the next 14 days. You can see the seasonal upward trend (if heading into summer) or downward trend (into winter) captured by the model, along with uncertainty that grows with the forecast horizon. The **other stations' data** have informed the forecast by stabilizing the seasonal baseline and recent level: for instance, if SF had a sudden spike on the last day that was not seen in other stations, the filter might attribute part of it to transient noise, tempering the level state increase, whereas a region-wide heatwave would raise the level state more significantly.
 
 ### 3.3.7 Conclusion
@@ -3994,7 +3870,13 @@ We have developed a comprehensive multistation DLM for forecasting San Francisco
 
 Same model as before
 
+## 3.4 Spatial model
+
+### 3.4.0 Old version
+
 ```{r}
+#| eval: false
+#| include: false
 # Load required packages
 library(dlm)        # for Dynamic Linear Models
 library(tidyverse)  # for data manipulation (dplyr, tidyr, ggplot2, etc.)
@@ -4280,9 +4162,7 @@ ggplot(plot_test_df, aes(x = date)) +
 
 ```
 
-# 3.4 Spatial model
-
-## 3.4.1
+### 3.4.1 Importing data and estimating the model
 
 ```{r}
 # Install and load required packages
@@ -4482,7 +4362,7 @@ z90 <- qnorm(0.95)
 sf_lower_test <- sf_fore_test - z90 * sf_sd_test
 sf_upper_test <- sf_fore_test + z90 * sf_sd_test
 ```
-### 3.4.2
+### 3.4.2. TMAX
 
 ```{r}
 sf_sd_test   <- sapply(forecast_res_test$Q, function(Sig) sqrt(Sig[1,1]))
@@ -4782,50 +4662,7 @@ ribbon_dec_df <- tibble(
 )
 ```
 
-
-```{r}
-library(ggplot2)
-ggplot() +
-  geom_ribbon(data = ribbon_dec_df,
-              aes(x = date, ymin = lower, ymax = upper),
-              fill = "steelblue", alpha = 0.2) +
-  geom_line(data = plot_df,
-            aes(x = date, y = temp, color = type, linetype = type),
-            size = 0.8) +
-  scale_color_manual(
-    values = c(
-      "Observed (Train)"     = "orange",
-      "Observed (Dec 2024)"  = "black",
-      "Forecast (Dec 2024)"  = "steelblue"
-    )
-  ) +
-  scale_linetype_manual(
-    values = c(
-      "Observed (Train)"     = "solid",
-      "Observed (Dec 2024)"  = "solid",
-      "Forecast (Dec 2024)"  = "dashed"
-    )
-  ) +
-  labs(
-    title    = "SF Tmax: Spatial‐Factor DLM — Training vs. December 2024",
-    subtitle = sprintf("Train RMSE=%.2f, MAE=%.2f | Test RMSE=%.2f, MAE=%.2f",
-                       rmse_train, mae_train, rmse_test, mae_test),
-    x        = "Date",
-    y        = "Max Temperature (°C)",
-    color    = "",
-    linetype = ""
-  ) +
-  coord_cartesian(
-    xlim = c(all_dates[start_plot], dec2024_dates[length(dec2024_dates)]),
-    ylim = range(
-      c(train_last60_df$temp, actual_dec_df$temp, ribbon_dec_df$lower, ribbon_dec_df$upper),
-      na.rm = TRUE
-    )
-  ) +
-  theme_minimal()
-```
-
-
+#### 3.4.2.a
 
 ```{r}
 # (Assumes Y_train, filter_res_train, sf_hat_train, and all_dates/train_idx are already defined)
@@ -4924,7 +4761,7 @@ ggplot(resid_melt, aes(x = date, y = Station, fill = Residual)) +
 
 ```
 
-Tmin Spatial actor DLM
+### 3.4.3. TMIN
 
 ```{r}
 # Install and load required packages
@@ -5467,12 +5304,7 @@ ggsave("spatial_forecast.pdf", plot = spatial_forecast, device = "pdf", width = 
 ```
 
 
-
-
-
-
-
-### end of new graphs
+#### 3.4.3.a
 
 
 ```{r}
