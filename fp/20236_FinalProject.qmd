@@ -930,7 +930,7 @@ sims.level <- replicate(
   n.sims,
   {
     full.draw <- dlmBSample(modFilt)       # one draw
-    as.numeric(full.draw[-1, 1])           # drop init, take level              QUI IL TOSTAPANE INIZIA A SCALDARSI
+    as.numeric(full.draw[-1, 1])           # drop init, take level
   }
 )
 
