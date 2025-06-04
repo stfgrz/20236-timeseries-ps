@@ -494,10 +494,10 @@ Consider the seasonality adjusted time-series from the GISTEMP data.
 
 Explore the use of Hidden Markov Models to identify the presence of long term temperature trends and/or change points inside the data. Comment on the results, highlighting advantages and limitations of the approach.
 
-### 2.1.a 2-states HMM
+### 2.1.a 2-states HMM and 3-states HMM
 
 ```{r}
-#| label: 2-states HMM
+#| label: 2-states HMM and 3-states HMM
 
 # 1. Specify the HMM with 2 states
 hmm_2 <- depmix(ts_gistemp_ds ~ 1,
@@ -519,8 +519,6 @@ fmodel@response[[2]][[1]]@parameters$sd
 MLEse <- standardError(fmodel)
 round(MLEse$par,3)
 ```
-
-### 2.1.b 3-states HMM
 
 ```{r}
 #| label: 3-states HMM
@@ -699,6 +697,7 @@ p <- ggplot(df, aes(x = time, y = value, color = state, fill = state)) +
 # Show plot
 print(p)
 ```
+### 2.b 2-state and 3-state linear HMM
 
 ```{r}
 # Prepare the time variable
@@ -733,6 +732,7 @@ fitted_vals <- numeric(length(df$temp))
 fitted_vals[estStates$state == 1] <- coef1[1] + coef1[2] * df$time[estStates$state == 1]
 fitted_vals[estStates$state == 2] <- coef2[1] + coef2[2] * df$time[estStates$state == 2]
 ```
+
 
 ```{r}
 # Plot original series with fitted trend lines
@@ -776,9 +776,8 @@ coef3  # (Intercept and Slope for State 3)
 
 Explore the use of Dynamic Linear Models such as random walk plus noise or locally linear trend to address the presence of acceleration/deceleration in global warming. You can opt to use more structured models (if you choose a model with seasonality, you can use the full time series). Comment on the results, and compare them with the ones obtained using HMMs.
 
-### 2.2.a.
+### 2.2.a Model 1: linear + seasonality
 
-> Stefano:
 
 ```{r}
 #| label: Building the DLM
@@ -884,8 +883,6 @@ ggplot(df_smth, aes(x = Time)) +
 
 ```
 
-#### 2.2.a.(i) Evaluating the model
-
 ```{r}
 #| label: Residual diagnostics
 
@@ -949,7 +946,7 @@ BIC <- -2*logLik + log(n)*p
 
 cat("logLik =", logLik, "\nAIC =", AIC, "\nBIC =", BIC, "\n")
 ```
-
+### 2.2.b Model 2: pure LLT
 ```{r}
 #| label: Model fit comparison with pure LLT
 
@@ -1014,7 +1011,7 @@ cat("RMSE =", round(RMSE,3),
     " 95% CI coverage =", round(coverage*100,1), "%\n")
 ```
 
-### 2.2.b Randow walk + Noise
+### 2.2.c Model 3: Randow walk + Noise
 
 > This is the model we are going for, best explanatory power both in-sample and out-sample
 
