@@ -924,7 +924,7 @@ modFilt <- dlmFilter(ts_gistemp, modLL2S)
 
   # 4.b. backward-sample many smooth draws of the _level_ (state component 1)
 set.seed(123)
-n.sims <- 1000
+n.sims <- 50
 
 sims.level <- replicate(
   n.sims,
@@ -1076,7 +1076,7 @@ cat("ΔAIC =",  AIC - AIC2,  "   ΔBIC =", BIC - BIC2)
 #| label: Forecast-performance on a hold-out | Traditional method
 
 # (a) Define training sample ending December 2019
-n_train   <- length(ts_gistemp) - 60
+n_train   <- length(ts_gistemp) - 12
 t_end     <- time(ts_gistemp)[n_train]
 train_ts  <- window(ts_gistemp, end = t_end)
 
@@ -1085,8 +1085,8 @@ fit_train <- dlmMLE(train_ts, parm = init, build = buildLL2S)
 mod_train <- buildLL2S(fit_train$par)
 filt_train<- dlmFilter(train_ts, mod_train)
 
-# (c) Forecast next 120 months
-fc        <- dlmForecast(filt_train, nAhead = 60)
+# (c) Forecast next 12 months
+fc        <- dlmForecast(filt_train, nAhead = 12)
 y_true    <- as.numeric(ts_gistemp[(n_train+1):length(ts_gistemp)])
 y_pred    <- drop(fc$f)          # forecast means
 y_lo      <- fc$a + qnorm(0.025)*sqrt(unlist(lapply(fc$Q, function(Q) Q[1,1])))
@@ -1487,7 +1487,7 @@ sd_level  <- sqrt(sapply(Ct_smooth, function(M) M[1, 1]))[-1]
 
 # FFBS simulations for credible intervals
 set.seed(123)
-n.sims <- 1000
+n.sims <- 50
 sims.level <- replicate(
   n.sims,
   {
@@ -1913,8 +1913,8 @@ cat("logLik =", logLik,
 ```{r}
 #| label: Forecast performance (hold-out)
 
-# (a) Define training sample ending 1 year (~365 days) before end
-n_train <- nrow(y) - 60
+# (a) Define training sample ending 30 days before end
+n_train <- nrow(y) - 30
 y_train <- y[1:n_train, , drop = FALSE]
 
 # (b) Re-fit on training data
@@ -1922,16 +1922,16 @@ fit_train  <- dlmMLE(y_train, parm = init_par, build = buildIndRWNoise)
 mod_train  <- buildIndRWNoise(fit_train$par)
 filt_train <- dlmFilter(y_train, mod_train)
 
-# (c) Forecast next 60 days
-fc      <- dlmForecast(filt_train, nAhead = 365)
+# (c) Forecast next 30 days
+fc      <- dlmForecast(filt_train, nAhead = 30)
 y_true  <- y[(n_train+1):nrow(y), ]
 y_pred  <- fc$f
 Q_list  <- fc$Q
 
 # prediction intervals
-y_lo <- matrix(NA, nrow = 60, ncol = 2)
-y_hi <- matrix(NA, nrow = 60, ncol = 2)
-for(i in 1:60) {
+y_lo <- matrix(NA, nrow = 30, ncol = 2)
+y_hi <- matrix(NA, nrow = 30, ncol = 2)
+for(i in 1:30) {
   se_pred     <- sqrt(diag(Q_list[[i]]))
   y_lo[i, ]   <- y_pred[i, ] + qnorm(0.025) * se_pred
   y_hi[i, ]   <- y_pred[i, ] + qnorm(0.975) * se_pred
@@ -2282,8 +2282,8 @@ cat("logLik =", logLik,
 #forecast out of sample
 #| label: Forecast performance (hold-out)
 
-# (a) Define training sample ending 1 year (~365 days) before end
-n_train <- nrow(temp) - 365
+# (a) Define training sample ending 30 days before end
+n_train <- nrow(temp) - 30
 y_train <- temp[1:n_train, , drop = FALSE]
 
 # (b) Re-fit on training data
@@ -2292,15 +2292,15 @@ mod_train  <- build_SUTSE(fit_train$par)
 filt_train <- dlmFilter(y_train, mod_train)
 
 # (c) Forecast next 365 days
-fc      <- dlmForecast(filt_train, nAhead = 365)
+fc      <- dlmForecast(filt_train, nAhead = 30)
 y_true  <- temp[(n_train+1):nrow(temp), ]
 y_pred  <- fc$f
 Q_list  <- fc$Q
 
 # prediction intervals
-y_lo <- matrix(NA, nrow = 365, ncol = 2)
-y_hi <- matrix(NA, nrow = 365, ncol = 2)
-for(i in 1:365) {
+y_lo <- matrix(NA, nrow = 30, ncol = 2)
+y_hi <- matrix(NA, nrow = 30, ncol = 2)
+for(i in 1:30) {
   se_pred     <- sqrt(diag(Q_list[[i]]))
   y_lo[i, ]   <- y_pred[i, ] + qnorm(0.025) * se_pred
   y_hi[i, ]   <- y_pred[i, ] + qnorm(0.975) * se_pred
@@ -5397,7 +5397,7 @@ df_af_hold_all <- bind_rows(
 # df_af_hold_all has: date | series ("tmin"/"tmax") | type ∈ {actual, fit} | value
 
 # 4) One‐panel ggplot putting everything together:
-ggplot() +
+spatial_forecast <- ggplot() +
   # (a) Nov 2024 history (solid lines for both series)
   geom_line(
     data = df_prev_all,
@@ -5462,7 +5462,8 @@ ggplot() +
     plot.subtitle = element_text(size = 11, face = "italic"),
     legend.position = "bottom"
   )
-
+print(spatial_forecast)
+ggsave("spatial_forecast.pdf", plot = spatial_forecast, device = "pdf", width = 12, height = 6, units = "in")
 ```
 
 
