@@ -2952,6 +2952,14 @@ p_ts_CF
 p_acf_CF
 p_hist_CF
 p_qq_CF
+
+# Print and save QQ plot
+print(p_qq)
+ggsave("p_qq_rwpn.pdf", plot = p_qq, device = "pdf", width = 8, height = 6, units = "in")
+
+# Print and save ACF plot
+print(p_acf)
+ggsave("p_acf_rwpn.pdf", plot = p_acf, device = "pdf", width = 8, height = 6, units = "in")
 ```
 
 
