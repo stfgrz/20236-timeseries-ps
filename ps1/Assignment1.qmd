@@ -655,5 +655,4 @@ plot.ts(abs((HW1080.pred_seas2[,1] - (observed_data))/observed_data), main = "Ab
 #squared error
 plot.ts((HW1080.pred_seas2[,1] - (observed_data))^2, main = "Squared Error")
 par(mfrow=c(1,1))
-
 ```
