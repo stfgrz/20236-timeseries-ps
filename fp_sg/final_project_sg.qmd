@@ -11,7 +11,7 @@ format:
   pdf:
     toc: true
     number-sections: true
-editor: visual
+editor: source
 bibliography: references.bib
 lang: en
 keywords: [time series, dynamic linear models, hidden Markov models, stochastic volatility, global temperature, weather forecasting]
@@ -34,6 +34,10 @@ keywords: [time series, dynamic linear models, hidden Markov models, stochastic 
 ## 1.1 Datasets
 
 ### 1.1.a GISTEMP monthly global anomalies (1880–2024).
+
+```{r}
+
+```
 
 ### 1.1.b GHCN daily San Francisco Downtown: TMIN/TMAX.
 
@@ -155,8 +159,6 @@ keywords: [time series, dynamic linear models, hidden Markov models, stochastic 
 -   Sensitivity: seasonal span, t vs Gaussian errors, trimming vs heavy tails.
 -   Temporal stability: pre-2000 vs post-2000 parameters.
 -   Posterior predictive checks (e.g., heatwave length distribution).
-
-
 
 # References
 
