@@ -17,6 +17,37 @@ lang: en
 keywords: [time series, dynamic linear models, hidden Markov models, stochastic volatility, global temperature, weather forecasting]
 ---
 
+```{r}
+#| label: Necessary packages
+#| include: false
+
+library(dlm)
+library(forecast)
+
+library(mvtnorm)
+
+library(ggplot2)
+library(ggfortify)
+library(depmixS4)
+
+library(tidyverse) # includes (lubridate), (dplyr), (ggplot2), (tidyr), (tidyselect)
+library(tinytex)
+library(viridis)
+library(gridExtra)
+library(magrittr)
+library(textab)
+library(reshape2)
+library(quantmod)
+
+library(modeltime)
+library(timetk)
+library(timechange)
+
+library(conflicted)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::filter)
+```
+
 # Abstract
 
 *≤150 words. Summarize aims, methods (HMM/HSMM, DLM/GP, latent-factor DLM), key answers to Q1–Q3, and headline results.*
@@ -36,20 +67,94 @@ keywords: [time series, dynamic linear models, hidden Markov models, stochastic 
 ### 1.1.a GISTEMP monthly global anomalies (1880–2024).
 
 ```{r}
+#| label: Load GISTEMP
 
+gistemp <- read.csv("fp_data/gistemp.txt", header = TRUE) 
+monthly_gistemp <- gistemp[, 2:13] 
+ts_gistemp <- ts(as.vector(t(monthly_gistemp)),
+                 start = c(1880, 1),
+                 frequency = 12)
+```
+
+```{r}
+dates <- seq.Date(from = as.Date("1880-01-01"), 
+                  by = "month", 
+                  length.out = length(ts_gistemp))
+```
+
+Now we create a dataframe which contains the date and the actual values taken by the time series.
+
+```{r}
+ts_df <- data.frame(date = dates, value = as.numeric(ts_gistemp))
 ```
 
 ### 1.1.b GHCN daily San Francisco Downtown: TMIN/TMAX.
 
+```{r}
+#| label: Load GHCN
+
+ghcn <- read.csv("fp_data/ghcn.txt", header = TRUE) 
+
+colnames(ghcn) <- c(
+  "station_id",
+  "station_name",
+  "latitude",
+  "longitude",
+  "elevation_m",
+  "date",
+  "tmin_tenthC",
+  "tmax_tenthC",
+  "tavg_tenthC",
+  "prcp_tenthmm"
+)
+
+ghcn <- ghcn %>%
+  mutate(
+    date  = as_date(date),                   # YYYY-MM-DD → Date
+    tmin  = tmin_tenthC / 10,                # → °C
+    tmax  = tmax_tenthC / 10,                # → °C
+    prcp  = prcp_tenthmm / 10                # → mm
+  ) %>%
+  select(-tmin_tenthC, -tmax_tenthC, -tavg_tenthC, -prcp_tenthmm)
+```
+
+```{r}
+#| label: Filtering for the Bay Area stations
+
+# San Francisco Downtown
+
+sf <- ghcn %>%
+  filter(station_id == "USW00023272") %>%
+  arrange(date)
+```
+
 ## 1.2 Quality Control & Missingness
 
 -   Filtering rules; short-gap imputation via state-space smoothing (Kalman smoother).
+
+```{r}
+
+```
+
 -   Define held-out mask for forecasting.
+
+```{r}
+
+```
 
 ## 1.3 De-seasonalization
 
 -   **GISTEMP:** MSTL or dynamic harmonic regression (Fourier terms with time-varying coefficients).
+
+```{r}
+
+```
+
 -   **SF (daily):** Remove annual cycle (MSTL or periodic GP kernel). Keep seasonal regressors if needed later.
+
+```{r}
+
+```
 
 ## 1.4 Outliers & Heteroskedasticity
 
