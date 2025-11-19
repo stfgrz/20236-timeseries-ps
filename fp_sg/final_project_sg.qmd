@@ -1,27 +1,163 @@
 ---
-title: "20236 Report SG"
-author: "Stefano Graziosi"
-format: html
+title: "Regime changes and latent-trend dynamics in global and local temperatures: HMMs and Bayesian state-space models"
+author: "Your Name"
+date: "2025-11-19"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+  pdf:
+    toc: true
+    number-sections: true
 editor: visual
+bibliography: references.bib
+lang: en
+keywords: [time series, dynamic linear models, hidden Markov models, stochastic volatility, global temperature, weather forecasting]
 ---
 
-## Quarto
+# Abstract
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+*≤150 words. Summarize aims, methods (HMM/HSMM, DLM/GP, latent-factor DLM), key answers to Q1–Q3, and headline results.*
 
-## Running Code
+# Research Questions
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+-   **Q1.** Are there persistent regimes or change points in global temperature anomalies?
+-   **Q2.** Is the warming rate accelerating?
+-   **Q3.** Can a joint latent process improve short-term SF Tmin/Tmax forecasts?
 
-```{r}
-1 + 1
-```
+------------------------------------------------------------------------
 
-You can add options to executable code like this
+# 1. Data, Preprocessing, and Diagnostics {#sec-data}
 
-```{r}
-#| echo: false
-2 * 2
-```
+## 1.1 Datasets
 
-The `echo: false` option disables the printing of code (only output is displayed).
+### 1.1.a GISTEMP monthly global anomalies (1880–2024).
+
+### 1.1.b GHCN daily San Francisco Downtown: TMIN/TMAX.
+
+## 1.2 Quality Control & Missingness
+
+-   Filtering rules; short-gap imputation via state-space smoothing (Kalman smoother).
+-   Define held-out mask for forecasting.
+
+## 1.3 De-seasonalization
+
+-   **GISTEMP:** MSTL or dynamic harmonic regression (Fourier terms with time-varying coefficients).
+-   **SF (daily):** Remove annual cycle (MSTL or periodic GP kernel). Keep seasonal regressors if needed later.
+
+## 1.4 Outliers & Heteroskedasticity
+
+-   Flag extremes; prefer heavy-tailed observation models (Student-t).
+
+## 1.5 Exploratory Diagnostics
+
+-   Time plots, ACF/PACF, month-of-year (global) / day-of-year (SF) climatology, rolling SD.
+
+::: callout-note
+**Deliverables:** Clear description of all preprocessing choices; figures for climatology and variability.
+:::
+
+------------------------------------------------------------------------
+
+# 2. Time-Series Decomposition (Task 1) {#sec-decomp}
+
+## 2.1 Robust STL / MSTL
+
+-   Trend + seasonal + remainder; comment on seasonal amplitude stability.
+
+## 2.2 SSA or MODWT (multiresolution)
+
+-   Separate low-frequency (decadal) modes from interannual components.
+
+## 2.3 Comparative Discussion
+
+-   Do STL and SSA imply monotone vs oscillatory low-frequency trend?
+
+**Figure placeholder:** ![Decomposition of GISTEMP: STL vs SSA.](figs/placeholder-stl-ssa.png){#fig-stl-ssa width="90%"}
+
+------------------------------------------------------------------------
+
+# 3. Global Warming Evidence in GISTEMP (Task 2) {#sec-gistemp}
+
+## 3.1 Hidden Markov / Regime Models {#sec-hmm}
+
+-   **Model family:** Regime-switching AR(p) or local-level SSM with Student-t emissions; optional AR(1) within regime.
+-   **Duration control:** HSMM (semi-Markov) or sticky HDP-HMM (infer (K)).
+-   **Inference & checks:** Posterior over boundaries; regime durations; LOO (leave-future-out), posterior predictive checks.
+
+**Figure placeholders:** ![Regime probabilities over time.](figs/placeholder-hmm-probs.png){#fig-hmm-probs width="90%"} ![Posterior change-point heatmap.](figs/placeholder-cp-heatmap.png){#fig-cp-heatmap width="90%"}
+
+## 3.2 Dynamic Linear / State-Space Models {#sec-dlm}
+
+-   **Local linear trend with stochastic volatility (SV)**; Student-t observation noise; latent log-variance AR(1).
+-   **Time-varying slope shrinkage:** Dynamic horseshoe or spike-and-slab on slope innovations.
+-   **GP trend alternative:** Matérn-3/2 or piecewise-linear kernel; compute (f'(t)) (rate) and (f''(t)) (acceleration) with bands.
+-   **Dynamic seasonality if needed:** Fourier states as random walks.
+
+### 3.2.1 Target Estimands to Report
+
+-   Warming rate (b_t) (°C/yr) and decadal averages.
+-   (P(f''(t)\>0)) post-1980; role of SV in uncertainty.
+
+**Figure placeholder:** ![Warming rate and acceleration with credible bands.](figs/placeholder-rate-accel.png){#fig-rate-accel width="90%"}
+
+## 3.3 HMM vs DLM/GP: Synthesis
+
+-   Fit comparison: LOO, log score/CRPS; interpretability (discrete regimes vs smooth acceleration).
+
+------------------------------------------------------------------------
+
+# 4. San Francisco Tmin/Tmax Forecasting in GHCN (Task 3) {#sec-sf}
+
+## 4.1 Problem Setup
+
+-   Bivariate target (Y_t=\[T\_{\min,t},T\_{\max,t}\]\^\top), seasonally adjusted.
+-   Coherence: model level (M_t) and spread (D_t) (log scale), then invert to Tmin/Tmax.
+
+## 4.2 Model Classes
+
+### (a) Independent local-level baselines
+
+-   Two separate local-level SSMs (t-errors). Calibration benchmark.
+
+### (b) SUR-type random walks
+
+-   Shared (W) (state covariance), diagonal (V).
+
+### (c) **Latent-Factor DLM (primary model)**
+
+-   Obs: (Y_t=\Lambda \theta\_t + v_t), State: (\theta\*t=\*\theta{t-1}+\omega\_t).
+-   (\theta\_t=\[\ell\_t, \xi\_t\]) with common level and synoptic factor; (\Lambda) loadings.
+-   Seasonal structure via time-varying Fourier states; factor SV for (v_t) or SV on spread (D_t).
+-   Alternative dependence: dynamic copula for one-step errors.
+
+#### Optional Extensions (clearly marked non-mandatory)
+
+-   Time-varying (V_t) (dynamic correlation (\rho\_t));
+-   Internal exogenous covariates (e.g., lagged TAVG; yesterday’s spread).
+
+## 4.3 Forecast Design & Evaluation
+
+-   Rolling-origin evaluation (expanding window); horizons (h=) 1, 3, 5, 7 days.
+-   Baselines: climatology-plus-persistence; seasonal naive.
+-   Scores: CRPS, log score; MAE/RMSE; interval coverage & sharpness; Diebold–Mariano tests.
+-   Coherence checks: (P(T\_{\max}\<T\_{\min})\approx 0); PIT histograms by horizon.
+
+**Figure placeholders:** ![SF climatology: day-of-year mean & amplitude.](figs/placeholder-sf-climatology.png){#fig-sf-clim width="90%"} ![Forecast diagram for a held-out month.](figs/placeholder-forecast-diagram.png){#fig-forecast width="90%"} ![Calibration: PIT histograms by horizon.](figs/placeholder-pit.png){#fig-pit width="90%"}
+
+------------------------------------------------------------------------
+
+# 5. Model Comparison, Robustness, and Sensitivity {#sec-robustness}
+
+-   Model selection: LOO/WAIC, marginal likelihoods (if computed), forecast scores.
+-   Sensitivity: seasonal span, t vs Gaussian errors, trimming vs heavy tails.
+-   Temporal stability: pre-2000 vs post-2000 parameters.
+-   Posterior predictive checks (e.g., heatwave length distribution).
+
+
+
+# References
+
+*Add items to `references.bib` and cite in-text as needed.*
